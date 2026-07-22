@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Fasteno Shyama · Modern Heritage tokens (light) ──
+     Token NAMES are semantic slots kept from the original theme;
+     only the VALUES changed for the light re-theme. */
+  --color-ink: #F9F8F4;        /* page background — warm ivory paper */
+  --color-surface: #F2EFE9;    /* raised sections / ghost hover ivory */
+  --color-card: #FFFFFF;       /* cards, inputs */
+  --color-line: #E2E0DA;       /* hairline borders */
+  --color-ivory: #1A1C1C;      /* primary text — deep charcoal */
+  --color-muted: #55585A;      /* secondary text */
+  --color-gold: #7A6018;       /* antique gold accent (contrast-safe as text) */
+  --color-gold-light: #CAA829; /* decorative gold fills / hovers */
+  --color-danger: #93222F;     /* muted burgundy */
+  --color-success: #3E7A57;
+
+  /* Charcoal color-blocking (dark footer / bands on ivory body) */
+  --color-block: #1A1C1C;       /* charcoal block bg */
+  --color-block-soft: #2F3131;  /* lighter charcoal — hover on dark blocks */
+  --color-block-text: #F1F1EE;  /* text on charcoal blocks */
+
+  --font-display: var(--font-playfair), "Georgia", serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-ivory);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: var(--color-gold-light);
+  color: #1A1C1C;
+}
+
+/* Eyebrow label used across the site */
+.eyebrow {
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+  font-weight: 600;
+}
+
+/* Thin gold underline used under section headings */
+.gold-rule {
+  width: 3.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-gold), transparent);
+}
+
+/* Card hover lift — soft high-diffusion shadow per Modern Heritage */
+.lift {
+  transition: transform 220ms ease, box-shadow 220ms ease,
+    background-color 220ms ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(26, 28, 28, 0.08);
+}
+
+/* Scrollbar (webkit) — light, sharp shapes */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #F2EFE9; }
+::-webkit-scrollbar-thumb { background: #C4C7C7; }
+::-webkit-scrollbar-thumb:hover { background: #7A6018; }

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+  <stop offset="0%" stop-color="#FFFFFF"/>
+  <stop offset="60%" stop-color="#F2EFE9"/>
+  <stop offset="100%" stop-color="#E8E4DA"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+  <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#1A1C1C" flood-opacity="0.18"/>
+</filter>
+<radialGradient id="met" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#F0D89A"/>
+  <stop offset="55%" stop-color="#C6A75E"/>
+  <stop offset="100%" stop-color="#7A5D26"/>
+</radialGradient><radialGradient id="pearl" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#FBF7EE"/>
+  <stop offset="55%" stop-color="#EDE2CF"/>
+  <stop offset="100%" stop-color="#B9AD93"/>
+</radialGradient><radialGradient id="stone" cx="40%" cy="35%" r="75%">
+  <stop offset="0%" stop-color="#f4d58c"/>
+  <stop offset="100%" stop-color="#C6A75E"/>
+</radialGradient>
+</defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<rect x="26" y="26" width="748" height="948" fill="none" stroke="#C6A75E" stroke-opacity="0.28" stroke-width="1.5"/><g filter="url(#soft)"><circle cx="400" cy="400" r="96" fill="url(#met)"/>
+<circle cx="400" cy="400" r="52" fill="url(#stone)"/>
+<circle cx="474" cy="400" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="464.0858798800485" cy="437" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="437" cy="464.0858798800484" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="400" cy="474" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="363" cy="464.0858798800485" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="335.9141201199516" cy="437" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="326" cy="400" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="335.9141201199515" cy="363" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="362.99999999999994" cy="335.9141201199516" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="400" cy="326" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="436.99999999999994" cy="335.9141201199515" r="8" fill="#F4EFE6" opacity="0.95"/><circle cx="464.0858798800484" cy="362.99999999999994" r="8" fill="#F4EFE6" opacity="0.95"/>
+<line x1="400" y1="496" x2="400" y2="548" stroke="url(#met)" stroke-width="7"/>
+<circle cx="400" cy="590" r="42" fill="url(#pearl)" stroke="#D8CCAF" stroke-width="2"/></g></svg>

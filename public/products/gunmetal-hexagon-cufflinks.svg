@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+  <stop offset="0%" stop-color="#FFFFFF"/>
+  <stop offset="60%" stop-color="#F2EFE9"/>
+  <stop offset="100%" stop-color="#E8E4DA"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+  <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#1A1C1C" flood-opacity="0.18"/>
+</filter>
+<radialGradient id="met" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#A7ADB7"/>
+  <stop offset="55%" stop-color="#767D88"/>
+  <stop offset="100%" stop-color="#3E434C"/>
+</radialGradient><radialGradient id="stone" cx="40%" cy="35%" r="75%">
+  <stop offset="0%" stop-color="#6c717a"/>
+  <stop offset="100%" stop-color="#3E434C"/>
+</radialGradient>
+</defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<rect x="26" y="26" width="748" height="948" fill="none" stroke="#C6A75E" stroke-opacity="0.28" stroke-width="1.5"/><g filter="url(#soft)">
+  <ellipse cx="340" cy="470" rx="14" ry="40" fill="url(#met)" opacity="0.7" transform="rotate(-18 340 470)"/>
+  <ellipse cx="480" cy="590" rx="14" ry="40" fill="url(#met)" opacity="0.7" transform="rotate(-18 480 590)"/>
+  <path d="M409.6743371481684 394 L409.6743371481684 486 L330 532 L250.32566285183162 486 L250.32566285183162 394 L329.9999999999999 348 Z" fill="url(#met)"/>
+<path d="M377.80460228890104 412.4 L377.80460228890104 467.6 L330 495.2 L282.19539771109896 467.6 L282.19539771109896 412.40000000000003 L329.99999999999994 384.8 Z" fill="url(#stone)"/>
+  <path d="M553.6743371481683 520 L553.6743371481683 612 L474 658 L394.3256628518316 612 L394.3256628518316 520 L473.9999999999999 474 Z" fill="url(#met)"/>
+<path d="M521.804602288901 538.4 L521.804602288901 593.6 L474 621.2 L426.19539771109896 593.6 L426.19539771109896 538.4 L473.99999999999994 510.8 Z" fill="url(#stone)"/>
+</g></svg>

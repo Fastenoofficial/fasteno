@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+  <stop offset="0%" stop-color="#FFFFFF"/>
+  <stop offset="60%" stop-color="#F2EFE9"/>
+  <stop offset="100%" stop-color="#E8E4DA"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+  <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#1A1C1C" flood-opacity="0.18"/>
+</filter>
+<radialGradient id="met" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#F0D89A"/>
+  <stop offset="55%" stop-color="#C6A75E"/>
+  <stop offset="100%" stop-color="#7A5D26"/>
+</radialGradient><radialGradient id="pearl" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#FBF7EE"/>
+  <stop offset="55%" stop-color="#EDE2CF"/>
+  <stop offset="100%" stop-color="#B9AD93"/>
+</radialGradient><radialGradient id="stone" cx="40%" cy="35%" r="75%">
+  <stop offset="0%" stop-color="#f4d58c"/>
+  <stop offset="100%" stop-color="#C6A75E"/>
+</radialGradient>
+</defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<rect x="26" y="26" width="748" height="948" fill="none" stroke="#C6A75E" stroke-opacity="0.28" stroke-width="1.5"/><g filter="url(#soft)"><g transform="rotate(-24 400 500)">
+  <path d="M400 300 C480 380 486 560 400 690 C314 560 320 380 400 300 Z" fill="url(#met)"/>
+  <line x1="400" y1="330" x2="400" y2="660" stroke="#00000055" stroke-width="4"/>
+  <path d="M400 380 L352 414 M400 380 L448 414" stroke="#00000040" stroke-width="3" fill="none"/><path d="M400 428 L350 462 M400 428 L450 462" stroke="#00000040" stroke-width="3" fill="none"/><path d="M400 476 L348 510 M400 476 L452 510" stroke="#00000040" stroke-width="3" fill="none"/><path d="M400 524 L346 558 M400 524 L454 558" stroke="#00000040" stroke-width="3" fill="none"/><path d="M400 572 L344 606 M400 572 L456 606" stroke="#00000040" stroke-width="3" fill="none"/><path d="M400 620 L342 654 M400 620 L458 654" stroke="#00000040" stroke-width="3" fill="none"/>
+</g></g></svg>

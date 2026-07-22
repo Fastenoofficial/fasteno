@@ -1,0 +1,497 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { isSupabaseConfigured } from "@/lib/config";
+import { getProfile, mapOrderRow, type OrderRow } from "@/lib/auth";
+import type { OrderStatus, PaymentStatus, Pattern } from "@/lib/types";
+
+/** Admin server actions. Each one re-verifies the admin role server-side
+ *  (RLS enforces it in the database too — this gives clean error messages). */
+
+export interface AdminActionResult {
+  error?: string;
+  ok?: boolean;
+  /** id of the created/updated product (for redirect after create) */
+  id?: string;
+}
+
+async function assertAdmin(): Promise<string | null> {
+  if (!isSupabaseConfigured) return "Admin is disabled in demo mode.";
+  const profile = await getProfile();
+  if (!profile || profile.role !== "admin")
+    return "You need admin access for this.";
+  return null;
+}
+
+// ── Products ──────────────────────────────────────────────────────────
+
+export interface ProductFormInput {
+  slug: string;
+  name: string;
+  categorySlug: string;
+  /** paise */
+  price: number;
+  /** paise, null = not on sale */
+  compareAtPrice: number | null;
+  description: string;
+  details: string[];
+  material: string;
+  color: string;
+  pattern: Pattern;
+  tags: string[];
+  images: string[];
+  stock: number;
+  featured: boolean;
+  active: boolean;
+  /** Legal Metrology compliance — defaults to India. */
+  countryOfOrigin: string;
+  /** HSN code for GST invoices, optional (e.g. "6215" for ties). */
+  hsnCode: string;
+  /** SEO <title> override — empty = fall back to the product name. */
+  metaTitle: string;
+  /** SEO meta description — empty = fall back to the description. */
+  metaDescription: string;
+}
+
+function validateProduct(p: ProductFormInput): string | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(p.slug))
+    return "Slug must be lowercase words separated by hyphens.";
+  if (!p.name.trim()) return "Please enter a product name.";
+  if (!p.categorySlug) return "Please choose a category.";
+  if (!Number.isInteger(p.price) || p.price <= 0)
+    return "Please enter a valid price.";
+  if (
+    p.compareAtPrice !== null &&
+    (!Number.isInteger(p.compareAtPrice) || p.compareAtPrice <= p.price)
+  )
+    return "Compare-at price must be higher than the selling price.";
+  if (!p.material.trim()) return "Please enter the material.";
+  if (!p.color.trim()) return "Please enter the primary colour.";
+  if (!Number.isInteger(p.stock) || p.stock < 0)
+    return "Stock must be zero or more.";
+  if (p.images.length === 0) return "Add at least one image path.";
+  return null;
+}
+
+export async function saveProduct(
+  input: ProductFormInput,
+  id?: string,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const invalid = validateProduct(input);
+  if (invalid) return { error: invalid };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+
+  // category slug → id
+  const { data: category } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("slug", input.categorySlug)
+    .single();
+  if (!category) return { error: "Unknown category." };
+
+  const row = {
+    slug: input.slug.trim(),
+    name: input.name.trim(),
+    category_id: category.id,
+    price: input.price,
+    compare_at_price: input.compareAtPrice,
+    description: input.description.trim(),
+    details: input.details.map((d) => d.trim()).filter(Boolean),
+    material: input.material.trim().toLowerCase(),
+    color: input.color.trim().toLowerCase(),
+    pattern: input.pattern,
+    tags: input.tags.map((t) => t.trim().toLowerCase()).filter(Boolean),
+    images: input.images.map((i) => i.trim()).filter(Boolean),
+    stock: input.stock,
+    featured: input.featured,
+    active: input.active,
+    country_of_origin: input.countryOfOrigin.trim() || "India",
+    hsn_code: input.hsnCode.trim(),
+    meta_title: input.metaTitle.trim(),
+    meta_description: input.metaDescription.trim(),
+  };
+
+  if (id) {
+    const { error } = await supabase.from("products").update(row).eq("id", id);
+    if (error)
+      return {
+        error:
+          error.code === "23505"
+            ? "That slug is already in use."
+            : "Could not save the product.",
+      };
+    revalidatePath("/admin/products");
+    revalidatePath(`/admin/products/${id}`);
+    return { ok: true, id };
+  }
+
+  const { data, error } = await supabase
+    .from("products")
+    .insert(row)
+    .select("id")
+    .single();
+  if (error || !data)
+    return {
+      error:
+        error?.code === "23505"
+          ? "That slug is already in use."
+          : "Could not create the product.",
+    };
+  revalidatePath("/admin/products");
+  return { ok: true, id: data.id };
+}
+
+/** Duplicates a product row: name gets " (Copy)", the slug gets a unique
+ *  "-copy"/"-copy-N" suffix, and the copy starts archived (active=false)
+ *  so it never goes live by accident. */
+export async function duplicateProduct(id: string): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+
+  const { data: source } = await supabase
+    .from("products")
+    .select(
+      "slug, name, category_id, price, compare_at_price, description, details, material, color, pattern, tags, images, stock, featured, country_of_origin, hsn_code, meta_title, meta_description",
+    )
+    .eq("id", id)
+    .single();
+  if (!source) return { error: "Product not found." };
+
+  // Unique slug: <base>-copy, then <base>-copy-2, -copy-3, …
+  const baseSlug = source.slug.replace(/-copy(?:-\d+)?$/, "");
+  const { data: siblings } = await supabase
+    .from("products")
+    .select("slug")
+    .like("slug", `${baseSlug}-copy%`);
+  const taken = new Set((siblings ?? []).map((s) => s.slug));
+  let copySlug = `${baseSlug}-copy`;
+  for (let n = 2; taken.has(copySlug); n += 1) copySlug = `${baseSlug}-copy-${n}`;
+
+  const { data, error } = await supabase
+    .from("products")
+    .insert({
+      ...source,
+      slug: copySlug,
+      name: `${source.name} (Copy)`,
+      active: false,
+    })
+    .select("id")
+    .single();
+  if (error || !data)
+    return {
+      error:
+        error?.code === "23505"
+          ? "A copy with that slug already exists — try again."
+          : "Could not duplicate the product.",
+    };
+
+  revalidatePath("/admin/products");
+  return { ok: true, id: data.id };
+}
+
+export async function deleteProduct(id: string): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  // archive rather than hard-delete (order_items may reference it)
+  const { error } = await supabase
+    .from("products")
+    .update({ active: false })
+    .eq("id", id);
+  if (error) return { error: "Could not archive the product." };
+
+  revalidatePath("/admin/products");
+  return { ok: true };
+}
+
+// ── Orders ────────────────────────────────────────────────────────────
+
+const ORDER_STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
+const PAYMENT_STATUSES: PaymentStatus[] = [
+  "pending",
+  "paid",
+  "failed",
+  "refunded",
+];
+
+export async function updateOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+  if (!ORDER_STATUSES.includes(status)) return { error: "Unknown status." };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("orders")
+    .update({ status })
+    .eq("id", orderId);
+  if (error) return { error: "Could not update the order status." };
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { ok: true };
+}
+
+export async function updatePaymentStatus(
+  orderId: string,
+  paymentStatus: PaymentStatus,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+  if (!PAYMENT_STATUSES.includes(paymentStatus))
+    return { error: "Unknown payment status." };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("orders")
+    .update({ payment_status: paymentStatus })
+    .eq("id", orderId);
+  if (error) return { error: "Could not update the payment status." };
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { ok: true };
+}
+
+// ── Shipment tracking ─────────────────────────────────────────────────
+
+export interface TrackingInput {
+  courier: string;
+  awbNumber: string;
+  trackingUrl: string;
+  /** Also move the order to "shipped" when saving tracking. */
+  markShipped: boolean;
+}
+
+/** Saves courier/AWB/tracking URL on the order. When the order is (or is
+ *  being marked) shipped, fires the "shipped" email — fire-and-forget. */
+export async function updateOrderTracking(
+  orderId: string,
+  input: TrackingInput,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const courier = input.courier.trim();
+  const awbNumber = input.awbNumber.trim();
+  const trackingUrl = input.trackingUrl.trim();
+  if (!courier) return { error: "Please choose or enter a courier." };
+  if (!awbNumber) return { error: "Please enter the AWB number." };
+  if (trackingUrl && !/^https?:\/\//i.test(trackingUrl))
+    return { error: "Tracking URL must start with http(s)://." };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+
+  const update: Record<string, unknown> = {
+    courier,
+    awb_number: awbNumber,
+    tracking_url: trackingUrl || null,
+  };
+  if (input.markShipped) update.status = "shipped";
+
+  const { error } = await supabase
+    .from("orders")
+    .update(update)
+    .eq("id", orderId);
+  if (error) return { error: "Could not save the tracking details." };
+
+  // Shipped email — fire-and-forget; never blocks or fails the save.
+  const { data: row } = await supabase
+    .from("orders")
+    .select(
+      "id, order_number, user_id, email, phone, shipping_address, subtotal, shipping_fee, total, payment_method, payment_status, razorpay_order_id, razorpay_payment_id, status, created_at, courier, awb_number, tracking_url, discount, order_items(id, product_id, name, price, quantity, image)",
+    )
+    .eq("id", orderId)
+    .single();
+
+  if (row && (row as { status?: string }).status === "shipped") {
+    const extras = row as {
+      courier: string | null;
+      awb_number: string | null;
+      tracking_url: string | null;
+      discount: number | null;
+    };
+    const order = {
+      ...mapOrderRow(row as OrderRow),
+      courier: extras.courier,
+      awbNumber: extras.awb_number,
+      trackingUrl: extras.tracking_url,
+      discount: extras.discount ?? 0,
+    };
+    import("@/lib/email")
+      .then(({ sendOrderEmail }) => sendOrderEmail(order, "shipped"))
+      .catch((err) => console.error("shipped email failed:", err));
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { ok: true };
+}
+
+// ── Refunds ───────────────────────────────────────────────────────────
+
+/** Refund a paid order via lib/razorpay refundOrder() — handles the
+ *  Razorpay API refund or COD bookkeeping, restores stock and flips
+ *  payment_status to refunded. */
+export async function refundOrderPayment(
+  orderId: string,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  try {
+    // Agent E provides refundOrder(orderId) in lib/razorpay — resolved at
+    // runtime via dynamic import (loose-typed so builds stay green while
+    // that module lands; the call signature is the agreed contract).
+    const razorpay = (await import("@/lib/razorpay")) as unknown as {
+      refundOrder?: (orderId: string) => Promise<unknown>;
+    };
+    if (typeof razorpay.refundOrder !== "function") {
+      return { error: "Refunds are not available yet." };
+    }
+    await razorpay.refundOrder(orderId);
+  } catch (err) {
+    console.error("refund failed:", err);
+    return {
+      error:
+        err instanceof Error && err.message
+          ? err.message
+          : "The refund could not be processed.",
+    };
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { ok: true };
+}
+
+// ── Coupons ───────────────────────────────────────────────────────────
+
+export interface CouponFormInput {
+  /** Stored uppercase. */
+  code: string;
+  type: "percent" | "flat";
+  /** percent (1-90) for percent type; PAISE for flat type. */
+  value: number;
+  /** paise */
+  minSubtotal: number;
+  /** paise cap for percent type, null = no cap */
+  maxDiscount: number | null;
+  /** ISO date (yyyy-mm-dd) or null = never expires */
+  expiresAt: string | null;
+  /** null = unlimited */
+  usageLimit: number | null;
+}
+
+function validateCoupon(c: CouponFormInput): string | null {
+  if (!/^[A-Z0-9]{3,24}$/.test(c.code))
+    return "Code must be 3-24 letters/numbers (no spaces).";
+  if (c.type !== "percent" && c.type !== "flat")
+    return "Unknown coupon type.";
+  if (c.type === "percent" && (!Number.isInteger(c.value) || c.value < 1 || c.value > 90))
+    return "Percent discount must be between 1 and 90.";
+  if (c.type === "flat" && (!Number.isInteger(c.value) || c.value <= 0))
+    return "Please enter a valid flat discount amount.";
+  if (!Number.isInteger(c.minSubtotal) || c.minSubtotal < 0)
+    return "Minimum subtotal must be zero or more.";
+  if (
+    c.maxDiscount !== null &&
+    (!Number.isInteger(c.maxDiscount) || c.maxDiscount <= 0)
+  )
+    return "Maximum discount must be a positive amount.";
+  if (c.usageLimit !== null && (!Number.isInteger(c.usageLimit) || c.usageLimit < 1))
+    return "Usage limit must be at least 1.";
+  if (c.expiresAt !== null && Number.isNaN(Date.parse(c.expiresAt)))
+    return "Please enter a valid expiry date.";
+  return null;
+}
+
+export async function createCoupon(
+  input: CouponFormInput,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const coupon = { ...input, code: input.code.trim().toUpperCase() };
+  const invalid = validateCoupon(coupon);
+  if (invalid) return { error: invalid };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { error } = await supabase.from("coupons").insert({
+    code: coupon.code,
+    type: coupon.type,
+    value: coupon.value,
+    min_subtotal: coupon.minSubtotal,
+    max_discount: coupon.type === "percent" ? coupon.maxDiscount : null,
+    expires_at: coupon.expiresAt
+      ? new Date(`${coupon.expiresAt}T23:59:59+05:30`).toISOString()
+      : null,
+    usage_limit: coupon.usageLimit,
+  });
+  if (error)
+    return {
+      error:
+        error.code === "23505"
+          ? "That coupon code already exists."
+          : "Could not create the coupon.",
+    };
+
+  revalidatePath("/admin/coupons");
+  return { ok: true };
+}
+
+export async function toggleCouponActive(
+  couponId: string,
+  active: boolean,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("coupons")
+    .update({ active })
+    .eq("id", couponId);
+  if (error) return { error: "Could not update the coupon." };
+
+  revalidatePath("/admin/coupons");
+  return { ok: true };
+}
+
+export async function deleteCoupon(
+  couponId: string,
+): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { error } = await supabase.from("coupons").delete().eq("id", couponId);
+  if (error) return { error: "Could not delete the coupon." };
+
+  revalidatePath("/admin/coupons");
+  return { ok: true };
+}

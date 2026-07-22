@@ -1,0 +1,217 @@
+import { NextResponse } from "next/server";
+import { COD_MAX_TOTAL, isDemoMode } from "@/lib/config";
+import { sendOrderEmail } from "@/lib/email";
+import { formatINR } from "@/lib/format";
+import {
+  buildDemoOrder,
+  calcTotals,
+  createSupabaseOrder,
+  decrementStock,
+  incrementCouponUsage,
+  parseCheckoutPayload,
+  priceCartLines,
+  restoreStock,
+  validateCoupon,
+} from "@/lib/orders";
+import {
+  getRazorpayClient,
+  isRazorpayServerConfigured,
+  razorpayPublicKeyId,
+} from "@/lib/razorpay";
+import { clientIp, rateLimit, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
+
+export const runtime = "nodejs";
+
+/** POST /api/checkout
+ *  Body: { items: {productId, quantity}[], contact, address, paymentMethod,
+ *          couponCode? }
+ *  Prices are ALWAYS recomputed from the catalog server-side, and coupons
+ *  are re-validated server-side — the client's discount is never trusted.
+ *
+ *  Responses:
+ *   demo     → { mode: "demo", order }               (client stores fs-orders)
+ *   cod      → { mode: "cod", order }                (persisted to Supabase)
+ *   razorpay → { mode: "razorpay", order, razorpay } (open widget, then
+ *               POST /api/razorpay/verify)
+ *   409      → item went out of stock between cart and payment
+ *   429      → rate limited (10 req/min/IP)
+ */
+export async function POST(request: Request) {
+  const limited = rateLimit(`checkout:${clientIp(request)}`, {
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: RATE_LIMIT_MESSAGE },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.ceil(limited.retryAfterMs / 1000)) },
+      },
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const parsed = parseCheckoutPayload(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const payload = parsed.payload;
+
+  // Re-price every line from the catalog — client prices are never trusted.
+  const priced = await priceCartLines(payload.items);
+  if (!priced.ok) {
+    return NextResponse.json({ error: priced.error }, { status: 400 });
+  }
+  const { items } = priced;
+  let totals = priced.totals;
+
+  // ── Coupon: re-validate server-side; a stale/invalid code fails the
+  //    request rather than silently charging full price. ────────────────
+  let couponCode: string | null = null;
+  if (payload.couponCode) {
+    const coupon = await validateCoupon(payload.couponCode, totals.subtotal);
+    if (!coupon.valid) {
+      return NextResponse.json(
+        { error: coupon.reason ?? "That coupon code is not valid." },
+        { status: 400 },
+      );
+    }
+    couponCode = coupon.code ?? payload.couponCode;
+    // free_shipping coupons waive the shipping fee (discount stays 0).
+    totals = calcTotals(
+      items,
+      coupon.discount ?? 0,
+      coupon.type === "free_shipping",
+    );
+  }
+
+  // ── COD guardrail ────────────────────────────────────────────────────
+  if (payload.paymentMethod === "cod" && totals.total > COD_MAX_TOTAL) {
+    return NextResponse.json(
+      {
+        error: `Cash on Delivery is available for orders up to ${formatINR(COD_MAX_TOTAL)}. Please pay online for larger orders.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  // ── Demo mode: simulated payment, order lives in the browser ────────
+  if (isDemoMode) {
+    const order = buildDemoOrder(payload, items, totals, couponCode);
+    return NextResponse.json({ mode: "demo", order });
+  }
+
+  if (payload.paymentMethod === "demo") {
+    return NextResponse.json(
+      { error: "Demo payment is not available on the live store." },
+      { status: 400 },
+    );
+  }
+
+  // ── Reserve stock atomically before taking any payment. ─────────────
+  // Razorpay-widget dismissal has no server signal, so pending razorpay
+  // orders keep their reservation (v1); the webhook restores stock on
+  // payment.failed. COD decrements and keeps it (order is confirmed).
+  const stock = await decrementStock(items);
+  if (!stock.ok) {
+    return NextResponse.json(
+      {
+        error: `"${stock.outOfStockName}" just went out of stock. Please remove it from your cart and try again.`,
+      },
+      { status: 409 },
+    );
+  }
+  /** Undo the reservation if we fail before an order exists. */
+  const releaseStock = () => {
+    if (stock.reserved) restoreStock(items).catch(() => {});
+  };
+
+  // ── COD: persist immediately, payment collected on delivery ─────────
+  if (payload.paymentMethod === "cod") {
+    const result = await createSupabaseOrder({
+      payload,
+      items,
+      totals,
+      paymentMethod: "cod",
+      paymentStatus: "pending",
+      status: "confirmed",
+      couponCode,
+    });
+    if (!result.ok) {
+      releaseStock();
+      return NextResponse.json({ error: result.error }, { status: 500 });
+    }
+    if (couponCode) incrementCouponUsage(couponCode).catch(() => {});
+    sendOrderEmail(result.order, "confirmation").catch(() => {});
+    return NextResponse.json({ mode: "cod", order: result.order });
+  }
+
+  // ── Razorpay: gateway order first, then our order referencing it ────
+  // (RLS only lets admins UPDATE orders, so razorpay_order_id must be
+  //  present at INSERT time rather than patched on afterwards.)
+  if (!isRazorpayServerConfigured()) {
+    releaseStock();
+    return NextResponse.json(
+      { error: "Online payment is not available right now. Please choose Cash on Delivery." },
+      { status: 400 },
+    );
+  }
+
+  let rzpOrderId: string;
+  try {
+    const razorpay = getRazorpayClient();
+    const rzpOrder = await razorpay.orders.create({
+      amount: totals.total, // already integer paise
+      currency: "INR",
+      receipt: `fs_${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`,
+      notes: { email: payload.contact.email },
+    });
+    rzpOrderId = String(rzpOrder.id);
+  } catch (err) {
+    console.error("checkout: razorpay order creation failed —", err);
+    releaseStock();
+    return NextResponse.json(
+      { error: "Could not start the payment. Please try again or choose Cash on Delivery." },
+      { status: 502 },
+    );
+  }
+
+  const result = await createSupabaseOrder({
+    payload,
+    items,
+    totals,
+    paymentMethod: "razorpay",
+    paymentStatus: "pending",
+    status: "pending",
+    razorpayOrderId: rzpOrderId,
+    couponCode,
+  });
+  if (!result.ok) {
+    releaseStock();
+    return NextResponse.json({ error: result.error }, { status: 500 });
+  }
+  if (couponCode) incrementCouponUsage(couponCode).catch(() => {});
+  // Confirmation email is sent when the payment is verified/captured
+  // (verify route / webhook), not here — the order is still pending.
+
+  return NextResponse.json({
+    mode: "razorpay",
+    order: result.order,
+    razorpay: {
+      keyId: razorpayPublicKeyId(),
+      orderId: rzpOrderId,
+      amount: totals.total,
+      currency: "INR",
+      name: payload.address.name,
+      email: payload.contact.email,
+      phone: payload.contact.phone,
+    },
+  });
+}

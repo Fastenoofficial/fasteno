@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+  <stop offset="0%" stop-color="#FFFFFF"/>
+  <stop offset="60%" stop-color="#F2EFE9"/>
+  <stop offset="100%" stop-color="#E8E4DA"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+  <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#1A1C1C" flood-opacity="0.18"/>
+</filter>
+<radialGradient id="met" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#F2F3F6"/>
+  <stop offset="55%" stop-color="#C3C7CF"/>
+  <stop offset="100%" stop-color="#7E838E"/>
+</radialGradient>
+</defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<rect x="26" y="26" width="748" height="948" fill="none" stroke="#C6A75E" stroke-opacity="0.28" stroke-width="1.5"/><g filter="url(#soft)"><path d="M220 500 C 280 540 340 540 400 500 C 460 540 520 540 580 500" fill="none" stroke="url(#met)" stroke-width="5" opacity="0.8"/><circle cx="220" cy="460" r="52" fill="url(#met)" stroke="#D8CCAF" stroke-width="2"/>
+<circle cx="220" cy="460" r="42.64" fill="none" stroke="#00000040" stroke-width="2.5"/>
+<circle cx="220" cy="460" r="8.32" fill="#000" opacity="0.4"/><circle cx="310" cy="486" r="52" fill="url(#met)" stroke="#D8CCAF" stroke-width="2"/>
+<circle cx="310" cy="486" r="42.64" fill="none" stroke="#00000040" stroke-width="2.5"/>
+<circle cx="310" cy="486" r="8.32" fill="#000" opacity="0.4"/><circle cx="400" cy="460" r="52" fill="url(#met)" stroke="#D8CCAF" stroke-width="2"/>
+<circle cx="400" cy="460" r="42.64" fill="none" stroke="#00000040" stroke-width="2.5"/>
+<circle cx="400" cy="460" r="8.32" fill="#000" opacity="0.4"/><circle cx="490" cy="486" r="52" fill="url(#met)" stroke="#D8CCAF" stroke-width="2"/>
+<circle cx="490" cy="486" r="42.64" fill="none" stroke="#00000040" stroke-width="2.5"/>
+<circle cx="490" cy="486" r="8.32" fill="#000" opacity="0.4"/><circle cx="580" cy="460" r="52" fill="url(#met)" stroke="#D8CCAF" stroke-width="2"/>
+<circle cx="580" cy="460" r="42.64" fill="none" stroke="#00000040" stroke-width="2.5"/>
+<circle cx="580" cy="460" r="8.32" fill="#000" opacity="0.4"/></g></svg>

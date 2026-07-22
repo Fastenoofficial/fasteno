@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+  <stop offset="0%" stop-color="#FFFFFF"/>
+  <stop offset="60%" stop-color="#F2EFE9"/>
+  <stop offset="100%" stop-color="#E8E4DA"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10"/>
+  <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#1A1C1C" flood-opacity="0.18"/>
+</filter>
+<radialGradient id="met" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#F2F3F6"/>
+  <stop offset="55%" stop-color="#C3C7CF"/>
+  <stop offset="100%" stop-color="#7E838E"/>
+</radialGradient><radialGradient id="pearl" cx="38%" cy="32%" r="80%">
+  <stop offset="0%" stop-color="#FBF7EE"/>
+  <stop offset="55%" stop-color="#EDE2CF"/>
+  <stop offset="100%" stop-color="#B9AD93"/>
+</radialGradient><radialGradient id="stone" cx="40%" cy="35%" r="75%">
+  <stop offset="0%" stop-color="#ffffff"/>
+  <stop offset="100%" stop-color="#F2F3F6"/>
+</radialGradient>
+</defs>
+<rect width="800" height="1000" fill="url(#bg)"/>
+<rect x="26" y="26" width="748" height="948" fill="none" stroke="#C6A75E" stroke-opacity="0.28" stroke-width="1.5"/><g filter="url(#soft)"><line x1="458" y1="500" x2="568" y2="500" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="568" cy="500" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="450.2294734194974" y1="529" x2="545.4922678357857" y2="584" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="545.4922678357857" cy="584" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="429" y1="550.2294734194975" x2="484" y2="645.4922678357857" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="484" cy="645.4922678357857" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="400" y1="558" x2="400" y2="668" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="400" cy="668" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="371" y1="550.2294734194975" x2="316.00000000000006" y2="645.4922678357857" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="316.00000000000006" cy="645.4922678357857" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="349.7705265805026" y1="529" x2="254.50773216421433" y2="584" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="254.50773216421433" cy="584" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="342" y1="500" x2="232" y2="500" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="232" cy="500" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="349.7705265805025" y1="471" x2="254.50773216421427" y2="416.00000000000006" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="254.50773216421427" cy="416.00000000000006" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="371" y1="449.7705265805026" x2="315.99999999999994" y2="354.5077321642143" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="315.99999999999994" cy="354.5077321642143" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="400" y1="442" x2="399.99999999999994" y2="332" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="399.99999999999994" cy="332" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="428.99999999999994" y1="449.7705265805025" x2="483.9999999999999" y2="354.50773216421425" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="483.9999999999999" cy="354.50773216421425" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/><line x1="450.2294734194974" y1="471" x2="545.4922678357857" y2="415.99999999999994" stroke="url(#met)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="545.4922678357857" cy="415.99999999999994" r="7" fill="#F4EFE6" opacity="0.9" stroke="#D8CCAF" stroke-width="1.5"/>
+<circle cx="400" cy="500" r="54" fill="url(#stone)"/>
+<circle cx="400" cy="500" r="54" fill="none" stroke="url(#met)" stroke-width="8"/></g></svg>
