@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText, Mail, MessageCircle } from "lucide-react";
 import { isDemoMode } from "@/lib/config";
 import { mapOrderRow, requireAdmin, type OrderRow } from "@/lib/auth";
 import { formatDate, formatINR } from "@/lib/format";
@@ -76,6 +76,15 @@ export default async function AdminOrderDetailPage({
         <div className="flex items-center gap-2">
           <OrderStatusBadge status={order.status} />
           <PaymentStatusBadge status={order.paymentStatus} />
+          <a
+            href={`/order/${order.id}/invoice`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-2 border border-gold-light px-3 py-1.5 text-xs font-medium uppercase tracking-[0.05em] text-ivory transition-colors hover:bg-surface"
+          >
+            <FileText size={13} />
+            GST Invoice
+          </a>
         </div>
       </div>
 
@@ -161,6 +170,26 @@ export default async function AdminOrderDetailPage({
               <br />
               {order.phone}
             </p>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
+              <a
+                href={`mailto:${order.email}?subject=${encodeURIComponent(`Your order ${order.orderNumber} — Fasteno Shyama`)}`}
+                className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs uppercase tracking-[0.05em] text-muted transition-colors hover:border-gold-light hover:text-ivory"
+              >
+                <Mail size={12} />
+                Email
+              </a>
+              {order.phone && (
+                <a
+                  href={`https://wa.me/91${order.phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(`Hello! Regarding your Fasteno Shyama order ${order.orderNumber}: `)}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs uppercase tracking-[0.05em] text-muted transition-colors hover:border-gold-light hover:text-ivory"
+                >
+                  <MessageCircle size={12} />
+                  WhatsApp
+                </a>
+              )}
+            </div>
           </div>
 
           <div className="border border-line bg-card p-5">

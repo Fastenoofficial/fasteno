@@ -34,6 +34,24 @@ export default async function AdminLayout({
 
   await requireAdmin();
 
+  // Pending-work counts for the nav badges (head-only count queries).
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const [pendingOrders, pendingReviews, openRequests] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "confirmed"]),
+    supabase
+      .from("reviews")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("order_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+  ]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
       <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
@@ -45,7 +63,13 @@ export default async function AdminLayout({
         <Badge tone="gold">Store manager</Badge>
       </div>
       <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
-        <AdminNav />
+        <AdminNav
+          counts={{
+            orders: pendingOrders.count ?? 0,
+            reviews: pendingReviews.count ?? 0,
+            requests: openRequests.count ?? 0,
+          }}
+        />
         <div className="min-w-0">{children}</div>
       </div>
     </section>
