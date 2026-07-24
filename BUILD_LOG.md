@@ -122,7 +122,41 @@ visually checked in browser.
 
 ---
 
-## ⏭️ RESUME HERE — project COMPLETE (v3 — reviews/self-service/UX wave shipped)
+## ⏭️ RESUME HERE — v4 shipped + deployed (2026-07-24, launch T-2 days)
+
+**State: v1+v2+v3+v4 done, code on GitHub, deployed to Vercel prod.**
+v4 (committed 2e82c9f + 9889df8):
+- Security: migration 004 (role-escalation, RPC grants, order forgery,
+  review bypass — file ready, ⚠️ MUST still be APPLIED in Supabase SQL
+  editor), CSP + security headers (next.config.ts), captured-amount check
+  in markOrderPaid, coupon redemption counted at payment (not creation),
+  guest orders via service-role client.
+- Ops: stale-order reaper /api/cron/reap-orders (vercel.json cron, daily
+  20:00 UTC; CRON_SECRET already set in Vercel prod), owner new-order
+  alert email (ORDER_NOTIFY_EMAIL → fallback SUPPORT_EMAIL) at the three
+  exactly-once landing points, Upstash-backed rate limiter (fetch REST,
+  in-memory fallback, fails open).
+- Infra: repo pushed to github.com/shreeshyamai35-arch/fasteno-shyama
+  (private); Vercel project shree-shyam-ai/fasteno-shyama deployed via
+  CLI (`npx vercel --prod`); GitHub↔Vercel CI NOT connected yet (Vercel
+  account has no GitHub login connection — user must link in dashboard).
+  Domains on account: fasteno.in, shreeshyamai.in.
+- Prod env vars present: Supabase (all 3), Razorpay (all 4), CRON_SECRET,
+  NEXT_PUBLIC_SITE_URL. Missing: RESEND_API_KEY, EMAIL_FROM,
+  ORDER_NOTIFY_EMAIL, NEXT_PUBLIC_GA_ID, UPSTASH_REDIS_REST_URL/TOKEN.
+
+### Launch blockers left (all user-side, see conversation 2026-07-24)
+1. Apply migration 004 (Supabase SQL editor, project jnvhnfjpeaifclajacsm)
+2. Real product photos (62 SVG placeholders live) — upload via admin
+3. lib/config.ts real business details (LEGAL_ADDRESS, GSTIN, phones)
+4. Resend account → RESEND_API_KEY + EMAIL_FROM in Vercel env
+5. GA4 id → NEXT_PUBLIC_GA_ID
+6. Razorpay LIVE keys + webhook registered against prod domain
+7. Link GitHub in Vercel dashboard for CI; end-to-end ₹1 test order
+
+---
+
+## Previous resume point — v3 (superseded)
 
 **State: v1 + v2 + v3 done.** v3 (2026-07-18) added, browser-tested 20/20
 green against live Supabase (light "Modern Heritage" theme from DESIGN.md
