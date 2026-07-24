@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  *  Rate limited: 20 req/min/IP.
  */
 export async function POST(request: Request) {
-  const limited = rateLimit(`coupon:${clientIp(request)}`, {
+  const limited = await rateLimit(`coupon:${clientIp(request)}`, {
     limit: 20,
     windowMs: 60_000,
   });

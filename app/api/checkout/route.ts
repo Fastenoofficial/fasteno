@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { COD_MAX_TOTAL, isDemoMode } from "@/lib/config";
-import { sendOrderEmail } from "@/lib/email";
+import { sendOrderEmail, sendOwnerOrderAlert } from "@/lib/email";
 import { formatINR } from "@/lib/format";
 import {
   buildDemoOrder,
@@ -37,7 +37,7 @@ export const runtime = "nodejs";
  *   429      → rate limited (10 req/min/IP)
  */
 export async function POST(request: Request) {
-  const limited = rateLimit(`checkout:${clientIp(request)}`, {
+  const limited = await rateLimit(`checkout:${clientIp(request)}`, {
     limit: 10,
     windowMs: 60_000,
   });
@@ -150,6 +150,7 @@ export async function POST(request: Request) {
     }
     if (couponCode) incrementCouponUsage(couponCode).catch(() => {});
     sendOrderEmail(result.order, "confirmation").catch(() => {});
+    sendOwnerOrderAlert(result.order).catch(() => {});
     return NextResponse.json({ mode: "cod", order: result.order });
   }
 

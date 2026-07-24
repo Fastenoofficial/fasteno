@@ -345,6 +345,66 @@ function shippedEmail(order: EmailOrder): {
   return { subject, html: shell(`Order ${order.orderNumber} shipped via ${courier}.`, body), text };
 }
 
+// ── Owner "new order" alert ────────────────────────────────────────────
+
+function ownerAlertEmail(order: EmailOrder): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const adminUrl = `${SITE_URL}/admin/orders/${order.id}`;
+  const codTag = order.paymentMethod === "cod" ? "COD" : "Paid online";
+  const subject = `New order ${order.orderNumber} — ${formatINR(order.total)} (${codTag})`;
+
+  const body = `
+    ${eyebrow("New order received")}
+    <h1 style="margin:0;font-family:${SERIF};font-size:24px;font-weight:normal;line-height:1.3;color:${IVORY};">${esc(order.orderNumber)} · ${formatINR(order.total)}</h1>
+    <p style="margin:14px 0 0;font-family:${SANS};font-size:13px;line-height:1.7;color:${MUTED};">
+      Placed ${esc(formatDate(order.createdAt))} ·
+      <span style="color:${IVORY};">${esc(paymentLabel(order.paymentMethod))}</span><br/>
+      Customer: <a href="mailto:${esc(order.email)}" style="color:${GOLD};text-decoration:none;">${esc(order.email)}</a>
+    </p>
+
+    <div style="margin-top:24px;">
+      ${eyebrow("Items")}
+      ${itemsTableHtml(order.items)}
+      ${totalsHtml(order)}
+    </div>
+
+    <div style="margin-top:24px;">
+      ${eyebrow("Ship to")}
+      ${addressHtml(order.shippingAddress)}
+    </div>
+
+    ${ctaButton(adminUrl, "Open in admin")}
+  `;
+
+  const text = [
+    `New order ${order.orderNumber} — ${formatINR(order.total)} (${codTag})`,
+    ``,
+    `Placed: ${formatDate(order.createdAt)}`,
+    `Payment: ${paymentLabel(order.paymentMethod)}`,
+    `Customer: ${order.email}`,
+    ``,
+    `Items:`,
+    ...order.items.map(
+      (i) => `  - ${i.name} × ${i.quantity} — ${formatINR(i.price * i.quantity)}`,
+    ),
+    `Total: ${formatINR(order.total)}`,
+    ``,
+    `Ship to:`,
+    addressText(order.shippingAddress),
+    ``,
+    `Manage: ${adminUrl}`,
+  ].join("\n");
+
+  return {
+    subject,
+    html: shell(`${order.orderNumber} · ${formatINR(order.total)} · ${codTag}`, body),
+    text,
+  };
+}
+
 // ── Public API ─────────────────────────────────────────────────────────
 
 /** Send a transactional order email. Silently no-ops without
@@ -381,5 +441,41 @@ export async function sendOrderEmail(
     }
   } catch (err) {
     console.error(`email: ${kind} send failed —`, err);
+  }
+}
+
+/** Alert the store owner that a real order landed (COD placement or online
+ *  payment capture). Goes to ORDER_NOTIFY_EMAIL, falling back to
+ *  SUPPORT_EMAIL; reply-to is the customer so a reply reaches them directly.
+ *  Same guarantees as sendOrderEmail: no-op without RESEND_API_KEY, never
+ *  throws. */
+export async function sendOwnerOrderAlert(order: EmailOrder): Promise<void> {
+  try {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return;
+
+    const to = process.env.ORDER_NOTIFY_EMAIL?.trim() || SUPPORT_EMAIL;
+    const { Resend } = await import("resend");
+    const resend = new Resend(apiKey);
+    const from =
+      process.env.EMAIL_FROM ?? "Fasteno Shyama <orders@fastenoshyama.in>";
+
+    const { subject, html, text } = ownerAlertEmail(order);
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      replyTo: order.email,
+      subject,
+      html,
+      text,
+    });
+    if (error) {
+      console.error(
+        `email: owner alert failed for ${order.orderNumber} —`,
+        error.message ?? error,
+      );
+    }
+  } catch (err) {
+    console.error("email: owner alert failed —", err);
   }
 }

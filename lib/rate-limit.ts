@@ -1,8 +1,14 @@
-/** Simple in-memory sliding-window rate limiter.
+/** Rate limiter for abuse-prone API routes (checkout, coupon).
  *
- *  Per-serverless-instance only (each warm lambda keeps its own counters) —
- *  good enough as a v1 abuse brake for checkout/coupon endpoints. Swap for
- *  Upstash/Redis if global limits are ever needed.
+ *  Two backends, picked automatically:
+ *  - Upstash Redis (UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN set):
+ *    a fixed-window counter shared by ALL serverless instances — real global
+ *    limits in production. Plain REST via fetch; no SDK dependency.
+ *  - In-memory sliding window otherwise: per-instance only (each warm lambda
+ *    keeps its own counters) — fine for local dev and as a fallback.
+ *
+ *  Redis failures fail OPEN to the in-memory limiter (with a logged error):
+ *  a rate-limit outage must never take checkout down with it.
  */
 
 export interface RateLimitOptions {
@@ -19,11 +25,12 @@ export interface RateLimitResult {
   retryAfterMs: number;
 }
 
+// ── In-memory backend ──────────────────────────────────────────────────
+
 const store = new Map<string, number[]>();
 const MAX_KEYS = 5_000;
 
-/** Record a hit for `key` and report whether it is within the limit. */
-export function rateLimit(
+function memoryRateLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions,
 ): RateLimitResult {
@@ -51,6 +58,73 @@ export function rateLimit(
   }
 
   return { ok: true, remaining: limit - hits.length, retryAfterMs: 0 };
+}
+
+// ── Upstash Redis backend ──────────────────────────────────────────────
+
+async function redisRateLimit(
+  restUrl: string,
+  token: string,
+  key: string,
+  { limit, windowMs }: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  // One counter per key per window; expiry a little past the window end so
+  // stale counters clean themselves up. PEXPIRE NX = only set expiry on the
+  // INCR that created the key.
+  const redisKey = `rl:${key}:${windowStart}`;
+  const res = await fetch(`${restUrl.replace(/\/$/, "")}/pipeline`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([
+      ["INCR", redisKey],
+      ["PEXPIRE", redisKey, String(windowMs + 1_000), "NX"],
+    ]),
+    signal: AbortSignal.timeout(2_000),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Upstash responded ${res.status}`);
+
+  const results = (await res.json()) as { result?: unknown }[];
+  const count = Number(results?.[0]?.result);
+  if (!Number.isFinite(count)) {
+    throw new Error("Upstash pipeline returned an unexpected shape");
+  }
+
+  if (count > limit) {
+    return {
+      ok: false,
+      remaining: 0,
+      retryAfterMs: Math.max(0, windowStart + windowMs - now),
+    };
+  }
+  return { ok: true, remaining: limit - count, retryAfterMs: 0 };
+}
+
+// ── Public API ─────────────────────────────────────────────────────────
+
+/** Record a hit for `key` and report whether it is within the limit. */
+export async function rateLimit(
+  key: string,
+  options: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const restUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (restUrl && token) {
+    try {
+      return await redisRateLimit(restUrl, token, key, options);
+    } catch (err) {
+      console.error(
+        "rate-limit: Upstash unavailable, falling back to in-memory —",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return memoryRateLimit(key, options);
 }
 
 /** Trusted client IP for rate-limit keys.

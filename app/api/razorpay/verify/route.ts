@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isDemoMode } from "@/lib/config";
-import { sendOrderEmail } from "@/lib/email";
+import { sendOrderEmail, sendOwnerOrderAlert } from "@/lib/email";
 import { markOrderPaid } from "@/lib/orders";
 import { verifyRazorpaySignature } from "@/lib/razorpay";
 
@@ -54,8 +54,9 @@ export async function POST(request: Request) {
       razorpayOrderId,
     );
   } else if (!alreadyPaid && order) {
-    // This call did the flip → confirmation email exactly once.
+    // This call did the flip → confirmation + owner alert exactly once.
     sendOrderEmail(order, "confirmation").catch(() => {});
+    sendOwnerOrderAlert(order).catch(() => {});
   }
 
   return NextResponse.json({ verified: true, persisted });
