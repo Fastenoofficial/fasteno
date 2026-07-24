@@ -7,11 +7,18 @@ import { SITE_URL } from "@/lib/config";
 /** "Continue with Google" + an "or" divider, rendered above the email
  *  forms on /login and /register. Uses Supabase OAuth (PKCE) — the code
  *  comes back through /auth/callback which exchanges it for a session.
- *  Requires the Google provider to be enabled in the Supabase dashboard;
- *  until then the click shows a friendly not-configured message. */
+ *
+ *  Rendered ONLY when NEXT_PUBLIC_GOOGLE_LOGIN is set: the Google provider
+ *  must first be enabled in the Supabase dashboard (Authentication →
+ *  Providers → Google, with a Google Cloud OAuth client). While the
+ *  provider is disabled, Supabase's /authorize endpoint answers with a JSON
+ *  error the browser downloads as a file — so a half-configured button is
+ *  worse than none. Flip the env var on (any value) after configuring. */
 export function GoogleSignInButton({ next = "/account" }: { next?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  const enabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_LOGIN);
+  if (!enabled) return null;
 
   async function handleClick() {
     setError(null);
