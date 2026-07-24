@@ -197,9 +197,10 @@ export async function POST(request: Request) {
     releaseStock();
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
-  if (couponCode) incrementCouponUsage(couponCode).catch(() => {});
-  // Confirmation email is sent when the payment is verified/captured
-  // (verify route / webhook), not here — the order is still pending.
+  // Coupon usage for online orders is counted when the payment is CONFIRMED
+  // (markOrderPaid, via the verify route / webhook) — not here — so an
+  // abandoned or failed Razorpay checkout never burns a redemption.
+  // Confirmation email is likewise sent on capture, not now (still pending).
 
   return NextResponse.json({
     mode: "razorpay",

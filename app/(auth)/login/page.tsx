@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { isDemoMode } from "@/lib/config";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, safeNextPath } from "@/lib/auth";
 import { DemoNotice } from "@/components/account/DemoNotice";
 import { LoginForm } from "@/components/account/LoginForm";
 
@@ -17,8 +17,8 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  // only allow internal redirect targets
-  const nextPath = next && next.startsWith("/") ? next : "/account";
+  // Only allow same-origin redirect targets (guards against open redirect).
+  const nextPath = safeNextPath(next);
 
   if (isDemoMode) {
     return (

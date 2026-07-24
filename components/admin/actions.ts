@@ -240,11 +240,61 @@ export async function updateOrderStatus(
 
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("orders")
-    .update({ status })
-    .eq("id", orderId);
+
+  // Cancelling must RETURN the stock reserved at checkout — but exactly once.
+  // Read the current state first: skip the restore when the stock was already
+  // given back (a failed online payment or a prior refund), so we never
+  // inflate inventory.
+  let restoreItems: { product_id: string; quantity: number }[] = [];
+  if (status === "cancelled") {
+    const { data: current } = await supabase
+      .from("orders")
+      .select("payment_status, order_items(product_id, quantity)")
+      .eq("id", orderId)
+      .single();
+    const alreadyReleased =
+      current?.payment_status === "failed" ||
+      current?.payment_status === "refunded";
+    if (current && !alreadyReleased) {
+      restoreItems = (
+        (current.order_items ?? []) as {
+          product_id: string | null;
+          quantity: number;
+        }[]
+      )
+        .filter((i) => i.product_id)
+        .map((i) => ({ product_id: i.product_id as string, quantity: i.quantity }));
+    }
+  }
+
+  // Conditional flip: when cancelling, only transition orders that are not
+  // already cancelled. The returned row count tells us whether THIS call did
+  // the transition, which gates the one-time stock restore below.
+  const query = supabase.from("orders").update({ status }).eq("id", orderId);
+  const { data: updated, error } =
+    status === "cancelled"
+      ? await query.neq("status", "cancelled").select("id")
+      : await query.select("id");
   if (error) return { error: "Could not update the order status." };
+  const didTransition = (updated ?? []).length > 0;
+
+  // Restore stock via the service role — restore_stock EXECUTE is service-only
+  // after the 004 hardening. Best-effort: never fails the status change.
+  if (status === "cancelled" && didTransition && restoreItems.length > 0) {
+    const { createServiceClient } = await import("@/lib/supabase/service");
+    const service = createServiceClient();
+    if (service) {
+      const { error: rpcError } = await service.rpc("restore_stock", {
+        items: restoreItems,
+      });
+      if (rpcError)
+        console.error("admin: restore_stock on cancel failed —", rpcError.message);
+    } else {
+      console.error(
+        "admin: cannot restore stock on cancel — SUPABASE_SERVICE_ROLE_KEY not set.",
+      );
+    }
+  }
 
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);

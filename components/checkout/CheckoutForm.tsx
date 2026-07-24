@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Banknote,
@@ -21,6 +22,7 @@ import {
   type RazorpayWidgetConfig,
 } from "@/components/checkout/razorpay-client";
 import { useCart } from "@/lib/cart-context";
+import { INDIAN_STATES } from "@/lib/constants";
 import {
   COD_MAX_TOTAL,
   FREE_SHIPPING_THRESHOLD,
@@ -51,16 +53,6 @@ function parseCouponType(value: unknown): CouponType | undefined {
     : undefined;
 }
 
-const INDIAN_STATES = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
-  "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim",
-  "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand",
-  "West Bengal", "Andaman & Nicobar Islands", "Chandigarh",
-  "Dadra & Nagar Haveli and Daman & Diu", "Delhi", "Jammu & Kashmir",
-  "Ladakh", "Lakshadweep", "Puducherry",
-];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[6-9]\d{9}$/;
@@ -106,7 +98,7 @@ function validate(form: FormState): Errors {
 }
 
 const methodCard = (active: boolean, disabled = false) =>
-  `flex w-full items-start gap-4 border p-4 text-left transition-colors ${
+  `flex w-full items-start gap-4 border p-4 text-left transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold ${
     disabled
       ? "cursor-not-allowed border-line bg-surface opacity-50"
       : `cursor-pointer ${
@@ -510,6 +502,21 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
                 ? "Continue to Payment"
                 : "Place Order"}
           </Button>
+          <p className="mt-3 text-center text-xs leading-relaxed text-muted">
+            By placing your order you agree to our{" "}
+            <Link href="/terms" className="underline hover:text-gold">
+              Terms of Service
+            </Link>
+            ,{" "}
+            <Link href="/privacy" className="underline hover:text-gold">
+              Privacy Policy
+            </Link>{" "}
+            and{" "}
+            <Link href="/shipping-returns" className="underline hover:text-gold">
+              Return Policy
+            </Link>
+            .
+          </p>
         </div>
       )}
     </form>

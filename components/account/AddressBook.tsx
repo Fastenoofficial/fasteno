@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { INDIAN_STATES } from "@/lib/constants";
 import type { Address } from "@/lib/types";
 
 const emptyForm: AddressInput = {
@@ -151,11 +153,15 @@ export function AddressBook({ addresses }: { addresses: Address[] }) {
               value={form.city}
               onChange={(e) => set("city", e.target.value)}
             />
-            <Input
+            <Select
               label="State"
               required
               value={form.state}
               onChange={(e) => set("state", e.target.value)}
+              options={[
+                { value: "", label: "Select state" },
+                ...INDIAN_STATES.map((s) => ({ value: s, label: s })),
+              ]}
             />
             <Input
               label="PIN code"

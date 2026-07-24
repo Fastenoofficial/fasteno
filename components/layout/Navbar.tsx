@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Heart, Menu, Search, ShoppingBag, User, X } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { SITE_NAME } from "@/lib/config";
@@ -22,6 +22,10 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
+  // Close the mobile drawer whenever the route changes (the Navbar instance
+  // persists in the root layout across client-side navigation).
+  useEffect(() => setOpen(false), [pathname]);
+
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-ink/95 backdrop-blur-sm">
       <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -29,6 +33,8 @@ export function Navbar() {
         <button
           type="button"
           aria-label="Toggle menu"
+          aria-expanded={open}
+          aria-controls="mobile-nav-drawer"
           className="inline-flex h-10 w-10 items-center justify-center text-ivory lg:hidden cursor-pointer"
           onClick={() => setOpen((v) => !v)}
         >
@@ -101,7 +107,7 @@ export function Navbar() {
 
       {/* mobile drawer */}
       {open && (
-        <div className="border-t border-line bg-ink lg:hidden">
+        <div id="mobile-nav-drawer" className="border-t border-line bg-ink lg:hidden">
           <ul className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
             {navLinks.map((l) => (
               <li key={l.href}>

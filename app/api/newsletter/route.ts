@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isDemoMode } from "@/lib/config";
+import { clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -33,9 +34,7 @@ function rateLimited(ip: string): boolean {
  *  Live mode: inserts into newsletter_subscribers (public-insert RLS);
  *  a unique violation is reported as success ("already subscribed"). */
 export async function POST(request: Request) {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
+  const ip = clientIp(request);
   if (rateLimited(ip)) {
     return NextResponse.json(
       { error: "Too many attempts — please try again in a minute." },

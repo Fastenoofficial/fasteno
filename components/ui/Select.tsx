@@ -1,4 +1,5 @@
 import type { SelectHTMLAttributes } from "react";
+import { ChevronDown } from "lucide-react";
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
@@ -19,17 +20,24 @@ export function Select({
           {label}
         </span>
       )}
-      <select
-        id={id}
-        className={`w-full appearance-none bg-transparent border-0 border-b border-ivory/60 px-0 py-2.5 pr-8 text-sm text-ivory focus:border-ivory focus:shadow-[0_1px_0_0_var(--color-ivory)] focus:outline-none transition-[border-color,box-shadow] cursor-pointer ${className}`}
-        {...rest}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <span className="relative block">
+        <select
+          id={id}
+          className={`w-full appearance-none bg-transparent border-0 border-b border-ivory/60 px-0 py-2.5 pr-8 text-sm text-ivory focus:border-ivory focus:shadow-[0_1px_0_0_var(--color-ivory)] focus:outline-none transition-[border-color,box-shadow] cursor-pointer ${className}`}
+          {...rest}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={16}
+          aria-hidden
+          className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-muted"
+        />
+      </span>
     </label>
   );
 }

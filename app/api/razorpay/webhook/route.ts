@@ -57,9 +57,14 @@ export async function POST(request: Request) {
   switch (event.event) {
     case "payment.captured": {
       if (!razorpayOrderId || !razorpayPaymentId) break;
+      // payment.entity.amount is the authentic captured amount (paise) —
+      // pass it so markOrderPaid can refuse an amount mismatch.
+      const capturedAmount =
+        typeof payment.amount === "number" ? payment.amount : undefined;
       const { persisted, alreadyPaid, order } = await markOrderPaid(
         razorpayOrderId,
         razorpayPaymentId,
+        { capturedAmount },
       );
       if (!persisted) {
         console.error(

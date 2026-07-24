@@ -49,7 +49,7 @@ export function ProductCard({ product }: { product: Product }) {
         className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center border transition-colors cursor-pointer ${
           wishlisted
             ? "border-gold bg-gold-light text-ivory"
-            : "border-line bg-ink/80 text-muted opacity-0 backdrop-blur-sm hover:text-gold group-hover:opacity-100"
+            : "border-line bg-ink/80 text-muted opacity-100 backdrop-blur-sm hover:text-gold focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
         } ${product.stock === 0 ? "top-12" : ""}`}
       >
         <Heart size={15} fill={wishlisted ? "currentColor" : "none"} />

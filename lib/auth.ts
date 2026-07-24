@@ -57,6 +57,21 @@ export async function getProfile(userId?: string): Promise<Profile | null> {
   };
 }
 
+// ── Safe redirect target ──────────────────────────────────────────────
+
+/** Sanitise a `?next=` redirect target so login/logout can only bounce the
+ *  user to a same-origin path. Rejects protocol-relative ("//evil.com"),
+ *  backslash ("/\\evil.com") and absolute-URL targets — all of which pass a
+ *  naive `startsWith("/")` check and enable an open redirect. */
+export function safeNextPath(
+  next: string | null | undefined,
+  fallback = "/account",
+): string {
+  if (typeof next !== "string") return fallback;
+  // Must begin with exactly one "/" and NOT be followed by "/" or "\".
+  return /^\/(?![/\\])/.test(next) ? next : fallback;
+}
+
 // ── Guards ────────────────────────────────────────────────────────────
 
 /** Redirects to /login when not signed in (live mode). Callers must

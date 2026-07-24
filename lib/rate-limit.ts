@@ -53,14 +53,29 @@ export function rateLimit(
   return { ok: true, remaining: limit - hits.length, retryAfterMs: 0 };
 }
 
-/** Best-effort client IP for rate-limit keys (Vercel/proxies set x-forwarded-for). */
+/** Trusted client IP for rate-limit keys.
+ *
+ *  A client can send its own `X-Forwarded-For`, and Vercel APPENDS the real
+ *  peer IP to the right of whatever arrives — so the LEFT-most token is
+ *  attacker-controlled and must never be trusted for a security limit.
+ *  We therefore prefer `x-real-ip` (Vercel overwrites this with the true peer
+ *  IP), then fall back to the RIGHT-most `x-forwarded-for` hop (the one the
+ *  platform appended). Behind a single trusted proxy both resolve to the real
+ *  client; a spoofed left-most value is ignored. */
 export function clientIp(request: Request): string {
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  if (realIp) return realIp;
+
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
+    const parts = forwarded
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) return last;
   }
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
+  return "unknown";
 }
 
 /** Standard 429 body used by the API routes. */

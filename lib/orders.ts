@@ -565,10 +565,17 @@ export async function createSupabaseOrder(
     order = mapOrderRow(row as OrderRow, input.items);
   } else {
     // Guest path — generate id + order number ourselves, no returning.
+    // Prefer the service-role client: the tightened orders INSERT policy
+    // (migration 004) only lets the public anon key insert PENDING orders,
+    // so routing guest inserts through the service role both bypasses that
+    // constraint safely and removes any client's ability to forge order
+    // state. Falls back to the anon client (still policy-constrained) when
+    // no service key is configured.
+    const guestClient = createServiceClient() ?? supabase;
     for (let attempt = 0; attempt < 2 && !order; attempt++) {
       const id = randomUUID();
       const orderNumber = `FS-${900000 + Math.floor(Math.random() * 100000)}`;
-      const { error } = await supabase
+      const { error } = await guestClient
         .from("orders")
         .insert({ ...baseRow, id, order_number: orderNumber, user_id: null });
       if (!error) {
@@ -662,6 +669,7 @@ export async function getSupabaseOrder(id: string): Promise<OrderWithExtras | nu
 export async function markOrderPaid(
   razorpayOrderId: string,
   razorpayPaymentId: string,
+  opts: { capturedAmount?: number } = {},
 ): Promise<{
   persisted: boolean;
   alreadyPaid: boolean;
@@ -673,7 +681,7 @@ export async function markOrderPaid(
 
   const { data: existing, error: readError } = await client
     .from("orders")
-    .select("id, payment_status")
+    .select("id, payment_status, total")
     .eq("razorpay_order_id", razorpayOrderId)
     .maybeSingle();
   if (readError || !existing) {
@@ -682,6 +690,23 @@ export async function markOrderPaid(
   }
   if (existing.payment_status === "paid") {
     return { persisted: true, alreadyPaid: true, order: null };
+  }
+
+  // Defence in depth: when the caller has an AUTHENTIC captured amount (the
+  // webhook's payment.entity.amount), it must equal the total we fixed on the
+  // order at creation. A Razorpay order can only be paid for its own amount,
+  // so a mismatch means tampering or a wrong-order mapping — refuse to flip
+  // and flag for manual review rather than confirm an underpaid order.
+  if (
+    typeof opts.capturedAmount === "number" &&
+    opts.capturedAmount !== existing.total
+  ) {
+    console.error(
+      `orders: CAPTURED AMOUNT MISMATCH for razorpay order ${razorpayOrderId} — ` +
+        `expected ${existing.total} paise, captured ${opts.capturedAmount}. ` +
+        `Order NOT marked paid; needs manual review.`,
+    );
+    return { persisted: false, alreadyPaid: false, order: null };
   }
   const wasFailed = existing.payment_status === "failed";
 
@@ -726,7 +751,17 @@ export async function markOrderPaid(
     }
   }
 
-  return { persisted: true, alreadyPaid: false, order: mapOrderRow(row, items) };
+  const paidOrder = mapOrderRow(row, items);
+  // Count the coupon redemption HERE — the moment payment is confirmed — and
+  // only on the call that actually flipped the order (an already-paid order
+  // returns earlier). This replaces the old count-at-order-creation for
+  // Razorpay, so an abandoned/failed online checkout no longer burns a
+  // redemption. COD still counts at placement (the order is confirmed there).
+  if (paidOrder.couponCode) {
+    incrementCouponUsage(paidOrder.couponCode).catch(() => {});
+  }
+
+  return { persisted: true, alreadyPaid: false, order: paidOrder };
 }
 
 /** Webhook payment.failed handler: flip a still-pending Razorpay order to
@@ -769,4 +804,69 @@ export async function markOrderPaymentFailed(
     }
   }
   return { updated: true };
+}
+
+/** Reaper for abandoned online checkouts: a customer who dismisses the
+ *  Razorpay widget leaves an order stuck in payment_status=pending that still
+ *  holds its reserved stock (there is no browser signal for a dismissal).
+ *  This flips such orders older than `olderThanMinutes` to failed and returns
+ *  their stock — the same effect as a payment.failed webhook. Idempotent and
+ *  race-safe: the pending-only guarded update means an order captured in the
+ *  meantime is skipped, and a late capture afterwards still recovers via
+ *  markOrderPaid (failed → paid re-reserves stock). Intended to run on a
+ *  schedule (Vercel Cron → /api/cron/reap-orders). Never throws. */
+export async function reapStalePendingRazorpayOrders(
+  olderThanMinutes = 45,
+): Promise<{ reaped: number }> {
+  if (isDemoMode) return { reaped: 0 };
+  const service = createServiceClient();
+  if (!service) {
+    console.error(
+      "orders: cannot reap stale orders — SUPABASE_SERVICE_ROLE_KEY not set.",
+    );
+    return { reaped: 0 };
+  }
+
+  const cutoffIso = new Date(
+    Date.now() - olderThanMinutes * 60_000,
+  ).toISOString();
+  const { data: stale, error } = await service
+    .from("orders")
+    .select("id, order_items(product_id, quantity)")
+    .eq("payment_method", "razorpay")
+    .eq("payment_status", "pending")
+    .lt("created_at", cutoffIso)
+    .limit(100);
+  if (error) {
+    console.error("orders: reap query failed —", error.message);
+    return { reaped: 0 };
+  }
+  if (!stale || stale.length === 0) return { reaped: 0 };
+
+  let reaped = 0;
+  for (const o of stale) {
+    // Guarded flip — only if still pending (skips a concurrent capture).
+    const { data: flipped } = await service
+      .from("orders")
+      .update({ payment_status: "failed" })
+      .eq("id", o.id)
+      .eq("payment_status", "pending")
+      .select("id");
+    if (!flipped || flipped.length === 0) continue;
+
+    const items = (
+      (o.order_items ?? []) as { product_id: string | null; quantity: number }[]
+    )
+      .filter((i) => i.product_id)
+      .map((i) => ({ product_id: i.product_id as string, quantity: i.quantity }));
+    if (items.length > 0) {
+      const { error: rpcError } = await service.rpc("restore_stock", { items });
+      if (rpcError) {
+        console.error("orders: reap restore_stock failed —", rpcError.message);
+      }
+    }
+    reaped += 1;
+  }
+  if (reaped > 0) console.log(`orders: reaped ${reaped} stale pending order(s).`);
+  return { reaped };
 }

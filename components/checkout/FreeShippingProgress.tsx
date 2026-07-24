@@ -21,7 +21,14 @@ export function FreeShippingProgress({ subtotal }: { subtotal: number }) {
           </>
         )}
       </p>
-      <div className="mt-3 h-1 w-full bg-card">
+      <div
+        role="progressbar"
+        aria-label="Progress towards free shipping"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="mt-3 h-1 w-full bg-card"
+      >
         <div
           className={`h-full transition-all duration-500 ${remaining === 0 ? "bg-success" : "bg-gold"}`}
           style={{ width: `${pct}%` }}

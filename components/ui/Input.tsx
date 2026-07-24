@@ -9,6 +9,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ label, error, id, className = "", ...rest }: InputProps) {
+  const errorId = error && id ? `${id}-error` : undefined;
   return (
     <label className="block">
       {label && (
@@ -16,8 +17,18 @@ export function Input({ label, error, id, className = "", ...rest }: InputProps)
           {label}
         </span>
       )}
-      <input id={id} className={`${fieldBase} ${className}`} {...rest} />
-      {error && <span className="mt-1 block text-xs text-danger">{error}</span>}
+      <input
+        id={id}
+        className={`${fieldBase} ${className}`}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
+        {...rest}
+      />
+      {error && (
+        <span id={errorId} role="alert" className="mt-1 block text-xs text-danger">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -34,6 +45,7 @@ export function Textarea({
   className = "",
   ...rest
 }: TextareaProps) {
+  const errorId = error && id ? `${id}-error` : undefined;
   return (
     <label className="block">
       {label && (
@@ -41,8 +53,18 @@ export function Textarea({
           {label}
         </span>
       )}
-      <textarea id={id} className={`${fieldBase} ${className}`} {...rest} />
-      {error && <span className="mt-1 block text-xs text-danger">{error}</span>}
+      <textarea
+        id={id}
+        className={`${fieldBase} ${className}`}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={errorId}
+        {...rest}
+      />
+      {error && (
+        <span id={errorId} role="alert" className="mt-1 block text-xs text-danger">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

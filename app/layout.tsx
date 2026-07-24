@@ -45,11 +45,17 @@ export default function RootLayout({
       <body className="flex min-h-screen flex-col">
         <OrgJsonLd />
         <Analytics />
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:bg-block focus:px-4 focus:py-2 focus:text-sm focus:text-block-text"
+        >
+          Skip to content
+        </a>
         <CartProvider>
           <AnnouncementBar />
           <TrustBar />
           <Navbar />
-          <main className="flex-1">{children}</main>
+          <main id="main" className="flex-1">{children}</main>
           <Footer />
           <WhatsAppButton />
         </CartProvider>

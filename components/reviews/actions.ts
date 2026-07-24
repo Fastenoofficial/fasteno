@@ -63,14 +63,22 @@ export async function submitReview(
   // Verified purchase: one of their orders contains this product.
   const verified = await hasPurchased(user.id, product.id as string);
 
-  const { error } = await supabase.from("reviews").insert({
+  // The reviews INSERT policy (migration 004) forbids clients from setting
+  // status/verified — those are server-authoritative. Write through the
+  // service-role client (which bypasses RLS) so a genuine "verified
+  // purchase" badge lands; if no service key is configured, fall back to the
+  // session client and drop the badge to satisfy the strict policy.
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const service = createServiceClient();
+  const insertClient = service ?? supabase;
+  const { error } = await insertClient.from("reviews").insert({
     product_id: product.id,
     user_id: user.id,
     author_name: authorName,
     rating,
     title,
     body,
-    verified,
+    verified: service ? verified : false,
     status: "pending",
   });
   if (error) {

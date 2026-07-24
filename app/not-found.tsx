@@ -11,7 +11,7 @@ export default function NotFound() {
         The page you're looking for doesn't exist or has been moved. Allow us
         to point you somewhere better dressed.
       </p>
-      <div className="mt-8 flex gap-3">
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Button href="/" variant="primary" size="md">
           Back to Home
         </Button>
