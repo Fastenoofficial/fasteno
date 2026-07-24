@@ -3,6 +3,7 @@ import {
   GSTIN,
   LEGAL_ADDRESS,
   LEGAL_ENTITY_NAME,
+  SELLER_STATE,
   SUPPORT_EMAIL,
   SUPPORT_PHONE,
 } from "@/lib/config";
@@ -15,7 +16,9 @@ import { formatDate } from "@/lib/format";
  *
  *  All money stays integer paise. Catalogue prices are GST-INCLUSIVE at
  *  GST_RATE, so per line: taxable = round(gross / (1 + rate)), gst = gross −
- *  taxable, split half CGST / half SGST (intra-state assumption for v1). */
+ *  taxable. Delivery within SELLER_STATE splits the tax half CGST / half
+ *  SGST; delivery to any other state is an inter-state supply and carries
+ *  IGST at the full rate instead. */
 
 // ── Structural order type (decoupled from other modules' exports) ─────
 
@@ -63,8 +66,9 @@ export interface InvoiceLine {
   unitPrice: number; // paise, GST-inclusive
   gross: number; // paise — unitPrice × quantity
   taxable: number; // paise
-  cgst: number; // paise
-  sgst: number; // paise
+  cgst: number; // paise, 0 on inter-state invoices
+  sgst: number; // paise, 0 on inter-state invoices
+  igst: number; // paise, 0 on intra-state invoices
 }
 
 export interface InvoiceParty {
@@ -88,30 +92,48 @@ export interface InvoiceData {
   paymentStatus: string;
   /** Buyer's state — shown as GST place of supply. */
   placeOfSupply: string;
+  /** True when the place of supply is outside SELLER_STATE → IGST. */
+  interState: boolean;
   gstRate: number; // e.g. 12
   halfRate: number; // e.g. 6 (CGST/SGST each)
   lines: InvoiceLine[];
   /** Sums over `lines` (items + shipping). */
-  totals: { taxable: number; cgst: number; sgst: number; gross: number };
+  totals: {
+    taxable: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    gross: number;
+  };
   discount: number; // paise, 0 when none
   grandTotal: number; // paise — the amount actually charged (order.total)
 }
 
 // ── Builder ────────────────────────────────────────────────────────────
 
-/** GST-inclusive back-calculation for one gross amount (paise). */
-function splitGst(gross: number): {
+/** GST-inclusive back-calculation for one gross amount (paise).
+ *  Intra-state → half CGST + half SGST; inter-state → full IGST. */
+function splitGst(
+  gross: number,
+  interState: boolean,
+): {
   taxable: number;
   cgst: number;
   sgst: number;
+  igst: number;
 } {
   const taxable = Math.round(gross / (1 + GST_RATE / 100));
   const gst = gross - taxable;
+  if (interState) return { taxable, cgst: 0, sgst: 0, igst: gst };
   const cgst = Math.round(gst / 2);
-  return { taxable, cgst, sgst: gst - cgst };
+  return { taxable, cgst, sgst: gst - cgst, igst: 0 };
 }
 
 export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
+  const interState =
+    order.shippingAddress.state.trim().toLowerCase() !==
+    SELLER_STATE.trim().toLowerCase();
+
   const lines: InvoiceLine[] = order.items.map((item) => {
     const gross = item.price * item.quantity;
     return {
@@ -120,7 +142,7 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
       quantity: item.quantity,
       unitPrice: item.price,
       gross,
-      ...splitGst(gross),
+      ...splitGst(gross, interState),
     };
   });
 
@@ -133,7 +155,7 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
       quantity: 1,
       unitPrice: order.shippingFee,
       gross: order.shippingFee,
-      ...splitGst(order.shippingFee),
+      ...splitGst(order.shippingFee, interState),
     });
   }
 
@@ -142,9 +164,10 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
       taxable: t.taxable + l.taxable,
       cgst: t.cgst + l.cgst,
       sgst: t.sgst + l.sgst,
+      igst: t.igst + l.igst,
       gross: t.gross + l.gross,
     }),
-    { taxable: 0, cgst: 0, sgst: 0, gross: 0 },
+    { taxable: 0, cgst: 0, sgst: 0, igst: 0, gross: 0 },
   );
 
   const a = order.shippingAddress;
@@ -175,6 +198,7 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     placeOfSupply: a.state,
+    interState,
     gstRate: GST_RATE,
     halfRate: GST_RATE / 2,
     lines,

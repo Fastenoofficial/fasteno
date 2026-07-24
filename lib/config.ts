@@ -25,19 +25,21 @@ export const isRazorpayConfigured = Boolean(
  *  from bundled seed data and checkout simulates payment. */
 export const isDemoMode = !isSupabaseConfigured;
 
-export const SUPPORT_EMAIL = "care@fastenoshyama.in";
-export const SUPPORT_PHONE = "+91 98765 43210";
+export const SUPPORT_EMAIL = "care@fasteno.in";
+export const SUPPORT_PHONE = "+91 78784 38958";
 
 /** WhatsApp support number in wa.me format (digits only, country code, no +). */
-export const WHATSAPP_NUMBER = "919876543210";
+export const WHATSAPP_NUMBER = "917878438958";
 
 /** ── Legal / compliance (Consumer Protection E-Commerce Rules 2020) ──
- *  TODO(owner): replace placeholders with the real registered details
- *  before going live. */
-export const LEGAL_ENTITY_NAME = "Fasteno Shyama";
+ *  Registered details per GST certificate (Form GST REG-06, GSTIN below).
+ *  "Fasteno Shyama" is the brand; SR Creation is the registered entity. */
+export const LEGAL_ENTITY_NAME = "SR Creation (Proprietor: Sandeep Agarwal)";
 export const LEGAL_ADDRESS =
-  "Registered address: [update in lib/config.ts], New Delhi, India";
-export const GSTIN = ""; // e.g. "07AAAAA0000A1Z5" — shown on invoices when set
+  "Shop No. 02, 1st Floor, 2772, Karodiya Bhawan, Poorviyo Ka Chowk, Khajane Walon Ka Rasta, Chandpol Bazar, Jaipur, Rajasthan — 302001";
+export const GSTIN = "08CVGPA9527D1ZO";
+/** Seller's GST state — decides CGST+SGST (intra-state) vs IGST on invoices. */
+export const SELLER_STATE = "Rajasthan";
 export const GRIEVANCE_OFFICER = {
   name: "Grievance Officer — Fasteno Shyama",
   email: SUPPORT_EMAIL,

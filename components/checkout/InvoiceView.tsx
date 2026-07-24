@@ -217,8 +217,14 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
               <th style={th}>Qty</th>
               <th style={th}>Rate</th>
               <th style={th}>Taxable</th>
-              <th style={th}>CGST ({data.halfRate}%)</th>
-              <th style={th}>SGST ({data.halfRate}%)</th>
+              {data.interState ? (
+                <th style={th}>IGST ({data.gstRate}%)</th>
+              ) : (
+                <>
+                  <th style={th}>CGST ({data.halfRate}%)</th>
+                  <th style={th}>SGST ({data.halfRate}%)</th>
+                </>
+              )}
               <th style={th}>Amount</th>
             </tr>
           </thead>
@@ -235,8 +241,14 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
                 <td style={td}>{line.quantity}</td>
                 <td style={td}>{formatINR(line.unitPrice)}</td>
                 <td style={td}>{formatINR(line.taxable)}</td>
-                <td style={td}>{formatINR(line.cgst)}</td>
-                <td style={td}>{formatINR(line.sgst)}</td>
+                {data.interState ? (
+                  <td style={td}>{formatINR(line.igst)}</td>
+                ) : (
+                  <>
+                    <td style={td}>{formatINR(line.cgst)}</td>
+                    <td style={td}>{formatINR(line.sgst)}</td>
+                  </>
+                )}
                 <td style={{ ...td, fontWeight: 600 }}>{formatINR(line.gross)}</td>
               </tr>
             ))}
@@ -258,12 +270,20 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
               <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
                 {formatINR(data.totals.taxable)}
               </td>
-              <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
-                {formatINR(data.totals.cgst)}
-              </td>
-              <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
-                {formatINR(data.totals.sgst)}
-              </td>
+              {data.interState ? (
+                <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
+                  {formatINR(data.totals.igst)}
+                </td>
+              ) : (
+                <>
+                  <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
+                    {formatINR(data.totals.cgst)}
+                  </td>
+                  <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
+                    {formatINR(data.totals.sgst)}
+                  </td>
+                </>
+              )}
               <td style={{ ...td, borderBottom: "none", borderTop: `1px solid ${TEXT}`, fontWeight: 600 }}>
                 {formatINR(data.totals.gross)}
               </td>
@@ -329,8 +349,11 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
           }}
         >
           <p style={{ margin: 0 }}>
-            All prices are inclusive of GST at {data.gstRate}% (CGST {data.halfRate}% +
-            SGST {data.halfRate}%), back-calculated from the gross amounts charged.
+            All prices are inclusive of GST at {data.gstRate}%{" "}
+            {data.interState
+              ? `(IGST ${data.gstRate}% — inter-state supply)`
+              : `(CGST ${data.halfRate}% + SGST ${data.halfRate}%)`}
+            , back-calculated from the gross amounts charged.
           </p>
           <p style={{ margin: "4px 0 0" }}>
             This is a computer-generated invoice and does not require a signature or stamp.
