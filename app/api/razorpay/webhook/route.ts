@@ -61,20 +61,35 @@ export async function POST(request: Request) {
       // pass it so markOrderPaid can refuse an amount mismatch.
       const capturedAmount =
         typeof payment.amount === "number" ? payment.amount : undefined;
-      const { persisted, alreadyPaid, order } = await markOrderPaid(
+      const { persisted, alreadyPaid, order, reason } = await markOrderPaid(
         razorpayOrderId,
         razorpayPaymentId,
         { capturedAmount },
       );
       if (!persisted) {
         console.error(
-          "webhook: payment.captured but no matching order —",
+          `webhook: payment.captured not persisted (${reason ?? "unknown"}) —`,
           razorpayOrderId,
         );
+        // Transient failures (DB error, order row not visible yet) → 500 so
+        // Razorpay RETRIES the delivery; a charged-but-unmarked order must
+        // not be silently forfeited. Permanent conditions (amount mismatch,
+        // cancelled order) are acknowledged with 200 — retrying can never
+        // succeed and they are already flagged for manual review.
+        if (reason !== "amount_mismatch" && reason !== "order_cancelled") {
+          return NextResponse.json(
+            { error: "Order update failed — please retry." },
+            { status: 500 },
+          );
+        }
       } else if (!alreadyPaid && order) {
         // This delivery did the flip → confirmation + owner alert once.
-        sendOrderEmail(order, "confirmation").catch(() => {});
-        sendOwnerOrderAlert(order).catch(() => {});
+        // AWAITED: un-awaited promises are dropped when Vercel freezes the
+        // function after the response.
+        await Promise.all([
+          sendOrderEmail(order, "confirmation"),
+          sendOwnerOrderAlert(order),
+        ]);
       }
       break;
     }

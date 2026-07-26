@@ -241,17 +241,20 @@ export async function updateOrderStatus(
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
+  // Current state first: gates the one-time stock restore on cancel AND the
+  // one-time shipped email on the shipped transition.
+  const { data: current } = await supabase
+    .from("orders")
+    .select("status, payment_status, order_items(product_id, quantity)")
+    .eq("id", orderId)
+    .single();
+  const previousStatus = current?.status as OrderStatus | undefined;
+
   // Cancelling must RETURN the stock reserved at checkout — but exactly once.
-  // Read the current state first: skip the restore when the stock was already
-  // given back (a failed online payment or a prior refund), so we never
-  // inflate inventory.
+  // Skip the restore when the stock was already given back (a failed online
+  // payment or a prior refund), so we never inflate inventory.
   let restoreItems: { product_id: string; quantity: number }[] = [];
   if (status === "cancelled") {
-    const { data: current } = await supabase
-      .from("orders")
-      .select("payment_status, order_items(product_id, quantity)")
-      .eq("id", orderId)
-      .single();
     const alreadyReleased =
       current?.payment_status === "failed" ||
       current?.payment_status === "refunded";
@@ -296,9 +299,102 @@ export async function updateOrderStatus(
     }
   }
 
+  // Shipped via the dropdown → the customer gets the same "on its way" email
+  // as the tracking-card path, exactly once (only on the actual transition).
+  // Awaited: un-awaited promises die when the serverless function freezes.
+  if (
+    status === "shipped" &&
+    didTransition &&
+    previousStatus !== "shipped"
+  ) {
+    await sendShippedEmailForOrder(orderId);
+  }
+
+  // Cancelling an order that already has a courier booking must release it,
+  // otherwise the parcel still ships and we pay for it. Best-effort and
+  // awaited — a Shiprocket outage must not fail the cancellation itself.
+  if (status === "cancelled" && didTransition) {
+    await cancelShiprocketForOrder(orderId);
+  }
+
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
   return { ok: true };
+}
+
+/** Release a Shiprocket booking when an order is cancelled/refunded.
+ *  No-op when Shiprocket is unconfigured or the order was never booked. */
+export async function cancelShiprocketForOrder(orderId: string): Promise<void> {
+  try {
+    const { isShiprocketConfigured } = await import("@/lib/config");
+    if (!isShiprocketConfigured) return;
+
+    const { createServiceClient } = await import("@/lib/supabase/service");
+    const service = createServiceClient();
+    if (!service) return;
+
+    const { data: row } = await service
+      .from("orders")
+      .select("awb_number, shiprocket_order_id")
+      .eq("id", orderId)
+      .single();
+    const awb = (row as { awb_number?: string | null } | null)?.awb_number;
+    const srId = (row as { shiprocket_order_id?: string | null } | null)
+      ?.shiprocket_order_id;
+    if (!awb && !srId) return; // never booked — nothing to release
+
+    const { cancelShipment } = await import("@/lib/shiprocket");
+    const res = await cancelShipment({ awb, shiprocketOrderId: srId });
+    if (!res.ok) {
+      console.error(
+        `shiprocket: could not cancel booking for order ${orderId} —`,
+        res.error,
+      );
+      return;
+    }
+    await service
+      .from("orders")
+      .update({
+        shiprocket_status: "CANCELED",
+        shiprocket_synced_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+  } catch (err) {
+    console.error("shiprocket: cancel threw —", (err as Error).message);
+  }
+}
+
+/** Load an order fresh and send the "shipped" email. Never throws. */
+async function sendShippedEmailForOrder(orderId: string): Promise<void> {
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const { data: row } = await supabase
+      .from("orders")
+      .select(
+        "id, order_number, user_id, email, phone, shipping_address, subtotal, shipping_fee, total, payment_method, payment_status, razorpay_order_id, razorpay_payment_id, status, created_at, courier, awb_number, tracking_url, discount, order_items(id, product_id, name, price, quantity, image)",
+      )
+      .eq("id", orderId)
+      .single();
+    if (!row) return;
+    const extras = row as {
+      courier: string | null;
+      awb_number: string | null;
+      tracking_url: string | null;
+      discount: number | null;
+    };
+    const order = {
+      ...mapOrderRow(row as OrderRow),
+      courier: extras.courier,
+      awbNumber: extras.awb_number,
+      trackingUrl: extras.tracking_url,
+      discount: extras.discount ?? 0,
+    };
+    const { sendOrderEmail } = await import("@/lib/email");
+    await sendOrderEmail(order, "shipped");
+  } catch (err) {
+    console.error("shipped email failed:", err);
+  }
 }
 
 export async function updatePaymentStatus(
@@ -310,13 +406,57 @@ export async function updatePaymentStatus(
   if (!PAYMENT_STATUSES.includes(paymentStatus))
     return { error: "Unknown payment status." };
 
+  // Refunds must go through the Refund button — it performs the actual
+  // Razorpay gateway refund plus consistent bookkeeping (cancel + stock).
+  // A bare flip to "refunded" here would record a refund that never happened.
+  if (paymentStatus === "refunded")
+    return {
+      error:
+        "Use the Refund button to refund — it processes the gateway refund and restores stock.",
+    };
+
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("orders")
-    .update({ payment_status: paymentStatus })
-    .eq("id", orderId);
-  if (error) return { error: "Could not update the payment status." };
+
+  // Manually marking a payment "failed" mirrors the payment.failed webhook:
+  // the reserved stock must come back — exactly once. Guarded flip (only
+  // pending→failed, never on cancelled orders whose stock is already back).
+  if (paymentStatus === "failed") {
+    const { data: flipped, error } = await supabase
+      .from("orders")
+      .update({ payment_status: "failed" })
+      .eq("id", orderId)
+      .eq("payment_status", "pending")
+      .neq("status", "cancelled")
+      .select("id, order_items:order_items(product_id, quantity)");
+    if (error) return { error: "Could not update the payment status." };
+    if ((flipped ?? []).length === 0)
+      return {
+        error:
+          "Only a pending payment on a non-cancelled order can be marked failed.",
+      };
+    const items = (
+      ((flipped![0] as { order_items?: { product_id: string | null; quantity: number }[] })
+        .order_items ?? [])
+    )
+      .filter((i) => i.product_id)
+      .map((i) => ({ product_id: i.product_id as string, quantity: i.quantity }));
+    if (items.length > 0) {
+      const { createServiceClient } = await import("@/lib/supabase/service");
+      const service = createServiceClient();
+      if (service) {
+        const { error: rpcError } = await service.rpc("restore_stock", { items });
+        if (rpcError)
+          console.error("admin: restore_stock on failed failed —", rpcError.message);
+      }
+    }
+  } else {
+    const { error } = await supabase
+      .from("orders")
+      .update({ payment_status: paymentStatus })
+      .eq("id", orderId);
+    if (error) return { error: "Could not update the payment status." };
+  }
 
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
@@ -353,6 +493,15 @@ export async function updateOrderTracking(
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
+  // Prior status — the shipped email goes out ONLY on the transition into
+  // "shipped", never again on later tracking edits (no duplicate emails).
+  const { data: before } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .single();
+  const wasShipped = before?.status === "shipped";
+
   const update: Record<string, unknown> = {
     courier,
     awb_number: awbNumber,
@@ -366,37 +515,112 @@ export async function updateOrderTracking(
     .eq("id", orderId);
   if (error) return { error: "Could not save the tracking details." };
 
-  // Shipped email — fire-and-forget; never blocks or fails the save.
-  const { data: row } = await supabase
-    .from("orders")
-    .select(
-      "id, order_number, user_id, email, phone, shipping_address, subtotal, shipping_fee, total, payment_method, payment_status, razorpay_order_id, razorpay_payment_id, status, created_at, courier, awb_number, tracking_url, discount, order_items(id, product_id, name, price, quantity, image)",
-    )
-    .eq("id", orderId)
-    .single();
-
-  if (row && (row as { status?: string }).status === "shipped") {
-    const extras = row as {
-      courier: string | null;
-      awb_number: string | null;
-      tracking_url: string | null;
-      discount: number | null;
-    };
-    const order = {
-      ...mapOrderRow(row as OrderRow),
-      courier: extras.courier,
-      awbNumber: extras.awb_number,
-      trackingUrl: extras.tracking_url,
-      discount: extras.discount ?? 0,
-    };
-    import("@/lib/email")
-      .then(({ sendOrderEmail }) => sendOrderEmail(order, "shipped"))
-      .catch((err) => console.error("shipped email failed:", err));
+  // Newly shipped this call → email once. Awaited (fire-and-forget promises
+  // are dropped when the serverless function freezes after the response).
+  if (input.markShipped && !wasShipped) {
+    await sendShippedEmailForOrder(orderId);
   }
 
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
   return { ok: true };
+}
+
+// ── Shiprocket ────────────────────────────────────────────────────────
+
+export interface ShipOrderResult extends AdminActionResult {
+  awbNumber?: string;
+  courier?: string;
+  /** True when the shipment exists at Shiprocket but no courier was booked
+   *  yet — the admin can retry AWB assignment without duplicating the order. */
+  needsAwb?: boolean;
+}
+
+/** One-click "ship with Shiprocket": creates the shipment (if not already
+ *  created), books a courier, saves courier/AWB/tracking URL onto the order,
+ *  marks it shipped and sends the existing "on its way" email.
+ *
+ *  Idempotent by design:
+ *  - An order that already has a shiprocket_order_id is never re-created.
+ *  - An order that already has an AWB is never re-booked.
+ *  Both would otherwise cost real money and produce duplicate parcels. */
+export async function shipOrderWithShiprocket(
+  orderId: string,
+): Promise<ShipOrderResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { isShiprocketConfigured } = await import("@/lib/config");
+  if (!isShiprocketConfigured)
+    return {
+      error:
+        "Shiprocket is not configured. Add SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD, then redeploy.",
+    };
+
+  // The booking engine (create → assign AWB → persist → email) lives in
+  // lib/shipping-sync so the auto-ship path shares exactly this logic.
+  const { bookShipmentForOrder } = await import("@/lib/shipping-sync");
+  const res = await bookShipmentForOrder(orderId);
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+
+  if (res.alreadyBooked)
+    return {
+      error: `This order already has AWB ${res.awbNumber}. Cancel the existing shipment before re-booking.`,
+    };
+  if (!res.ok)
+    return { error: res.error ?? "Could not book the shipment.", needsAwb: res.needsAwb };
+
+  return { ok: true, awbNumber: res.awbNumber, courier: res.courier };
+}
+
+/** Pull the latest courier status for one order and persist it. Returns the
+ *  raw Shiprocket status for display. */
+export async function syncShiprocketStatus(
+  orderId: string,
+): Promise<AdminActionResult & { rawStatus?: string }> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+
+  const { isShiprocketConfigured } = await import("@/lib/config");
+  if (!isShiprocketConfigured)
+    return { error: "Shiprocket is not configured." };
+
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const service = createServiceClient();
+  if (!service) return { error: "Service role key not set." };
+
+  const { data: row } = await service
+    .from("orders")
+    .select("awb_number, status")
+    .eq("id", orderId)
+    .single();
+  const awb = (row as { awb_number?: string | null } | null)?.awb_number;
+  if (!awb) return { error: "This order has no AWB to track yet." };
+
+  const { applyTrackingToOrder } = await import("@/lib/shipping-sync");
+  const result = await applyTrackingToOrder(orderId, awb);
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { ok: true, rawStatus: result.rawStatus };
+}
+
+/** Admin "test connection" — proves the Shiprocket credentials work. */
+export async function testShiprocketConnection(): Promise<AdminActionResult> {
+  const denied = await assertAdmin();
+  if (denied) return { error: denied };
+  const { isShiprocketConfigured } = await import("@/lib/config");
+  if (!isShiprocketConfigured)
+    return {
+      error:
+        "Shiprocket is not configured. Set SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD.",
+    };
+  const { pingShiprocket } = await import("@/lib/shiprocket");
+  const res = await pingShiprocket();
+  return res.ok ? { ok: true } : { error: res.error };
 }
 
 // ── Refunds ───────────────────────────────────────────────────────────

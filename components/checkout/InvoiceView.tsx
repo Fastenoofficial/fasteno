@@ -303,7 +303,9 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
                   padding: "4px 0",
                 }}
               >
-                <span style={{ color: FAINT }}>Discount</span>
+                <span style={{ color: FAINT }}>
+                  Discount applied (already netted off the lines above)
+                </span>
                 <span>− {formatINR(data.discount)}</span>
               </div>
             )}

@@ -46,10 +46,13 @@ export default async function AdminLayout({
       .from("reviews")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),
+    // order_requests uses 'requested' for the open state (003 schema check
+    // constraint: requested|approved|rejected|completed) — NOT 'pending',
+    // which made this badge permanently show 0.
     supabase
       .from("order_requests")
       .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
+      .eq("status", "requested"),
   ]);
 
   return (

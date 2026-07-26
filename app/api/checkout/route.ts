@@ -148,9 +148,15 @@ export async function POST(request: Request) {
       releaseStock();
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
-    if (couponCode) incrementCouponUsage(couponCode).catch(() => {});
-    sendOrderEmail(result.order, "confirmation").catch(() => {});
-    sendOwnerOrderAlert(result.order).catch(() => {});
+    // AWAIT the side effects: on Vercel the function is frozen the moment the
+    // response returns, so un-awaited promises are silently dropped — this was
+    // the root cause of intermittently missing confirmation emails. All three
+    // are guaranteed never to throw.
+    await Promise.all([
+      couponCode ? incrementCouponUsage(couponCode) : Promise.resolve(),
+      sendOrderEmail(result.order, "confirmation"),
+      sendOwnerOrderAlert(result.order),
+    ]);
     return NextResponse.json({ mode: "cod", order: result.order });
   }
 

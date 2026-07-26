@@ -55,8 +55,12 @@ export async function POST(request: Request) {
     );
   } else if (!alreadyPaid && order) {
     // This call did the flip → confirmation + owner alert exactly once.
-    sendOrderEmail(order, "confirmation").catch(() => {});
-    sendOwnerOrderAlert(order).catch(() => {});
+    // AWAITED: Vercel freezes the function after the response, dropping
+    // un-awaited promises — emails must complete before we return.
+    await Promise.all([
+      sendOrderEmail(order, "confirmation"),
+      sendOwnerOrderAlert(order),
+    ]);
   }
 
   return NextResponse.json({ verified: true, persisted });

@@ -21,6 +21,29 @@ export const isRazorpayConfigured = Boolean(
   process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
 );
 
+/** True when Shiprocket API credentials are present. While false, every
+ *  Shiprocket code path is inert and the admin keeps entering courier/AWB
+ *  by hand — so the store works exactly as before without credentials. */
+export const isShiprocketConfigured = Boolean(
+  process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD,
+);
+
+/** Pickup location nickname as configured in Shiprocket → Settings →
+ *  Pickup Addresses. Must match exactly or shipment creation is rejected. */
+export const SHIPROCKET_PICKUP_LOCATION =
+  process.env.SHIPROCKET_PICKUP_LOCATION?.trim() || "Primary";
+
+/** Parcel defaults used when a product has no per-item dimensions.
+ *  Shiprocket bills on volumetric weight, so these should reflect a real
+ *  packed parcel rather than being left at zero. */
+export const SHIPROCKET_PARCEL = {
+  /** kg, per order (a tie/accessory parcel is light). */
+  weightKg: Number(process.env.SHIPROCKET_PARCEL_WEIGHT_KG ?? "0.3"),
+  lengthCm: Number(process.env.SHIPROCKET_PARCEL_LENGTH_CM ?? "22"),
+  breadthCm: Number(process.env.SHIPROCKET_PARCEL_BREADTH_CM ?? "16"),
+  heightCm: Number(process.env.SHIPROCKET_PARCEL_HEIGHT_CM ?? "4"),
+} as const;
+
 /** Demo mode = no Supabase project connected. The storefront runs fully
  *  from bundled seed data and checkout simulates payment. */
 export const isDemoMode = !isSupabaseConfigured;

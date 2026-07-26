@@ -134,15 +134,38 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
     order.shippingAddress.state.trim().toLowerCase() !==
     SELLER_STATE.trim().toLowerCase();
 
-  const lines: InvoiceLine[] = order.items.map((item) => {
-    const gross = item.price * item.quantity;
+  // A coupon reduces the amount actually charged, so it reduces the taxable
+  // value and the GST with it. Apportion the discount across the item lines
+  // pro-rata by gross (largest-remainder, so the parts sum EXACTLY to the
+  // discount) and compute GST on the net figure. Without this the invoice
+  // overstates collected GST on every discounted order — a filing liability.
+  const discount = Math.max(0, Math.min(order.discount ?? 0, order.subtotal));
+  const itemGross = order.items.map((i) => i.price * i.quantity);
+  const grossSum = itemGross.reduce((a, b) => a + b, 0);
+  const share = itemGross.map((g) =>
+    grossSum > 0 ? (discount * g) / grossSum : 0,
+  );
+  const alloc = share.map((s) => Math.floor(s));
+  let remainder = discount - alloc.reduce((a, b) => a + b, 0);
+  // Hand the leftover paise to the largest fractional parts first.
+  for (const idx of share
+    .map((s, i) => ({ i, frac: s - Math.floor(s) }))
+    .sort((a, b) => b.frac - a.frac)
+    .map((x) => x.i)) {
+    if (remainder <= 0) break;
+    alloc[idx] += 1;
+    remainder -= 1;
+  }
+
+  const lines: InvoiceLine[] = order.items.map((item, i) => {
+    const net = itemGross[i] - alloc[i];
     return {
       description: item.name,
       hsnCode: (item.hsnCode ?? item.hsn_code ?? "").trim(),
       quantity: item.quantity,
       unitPrice: item.price,
-      gross,
-      ...splitGst(gross, interState),
+      gross: net,
+      ...splitGst(net, interState),
     };
   });
 
@@ -203,7 +226,7 @@ export function buildInvoiceData(order: InvoiceOrder): InvoiceData {
     halfRate: GST_RATE / 2,
     lines,
     totals,
-    discount: order.discount ?? 0,
+    discount,
     grandTotal: order.total,
   };
 }

@@ -68,8 +68,16 @@ async function fetchAllProducts(): Promise<Product[]> {
     )
     .eq("active", true);
   if (error || !data) {
-    console.error("catalog: falling back to seed —", error?.message);
-    return seedProducts;
+    // LIVE mode must never fall back to bundled seed data: the seed rows have
+    // demo prices, demo stock and ids that don't exist in the database, so
+    // they would show phantom products a customer cannot actually buy (and at
+    // the wrong price). Fail closed — an empty catalog surfaces the outage
+    // instead of quietly selling fiction.
+    console.error(
+      "catalog: products query failed in LIVE mode —",
+      error?.message ?? "no data returned",
+    );
+    return [];
   }
   return (data as unknown[]).map((raw) => {
     const row = raw as Omit<ProductRow, "category_slug"> & {
@@ -92,7 +100,14 @@ export async function getCategories(): Promise<Category[]> {
     .from("categories")
     .select("id, slug, name, description, sort_order")
     .order("sort_order");
-  if (error || !data) return seedCategories;
+  // Same reasoning as fetchAllProducts: no seed fallback in live mode.
+  if (error || !data) {
+    console.error(
+      "catalog: categories query failed in LIVE mode —",
+      error?.message ?? "no data returned",
+    );
+    return [];
+  }
   return data.map((c) => ({
     id: c.id,
     slug: c.slug,

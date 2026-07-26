@@ -65,8 +65,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, demo: true });
   }
 
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  // Insert through the service client, not the session client. The table's
+  // INSERT policy is service-role only: a public-insert policy would let
+  // anyone POST straight to PostgREST and bypass the rate limit and email
+  // validation above, filling the table with junk. Routing through here keeps
+  // this endpoint the only way in.
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const supabase = createServiceClient();
+  if (!supabase) {
+    console.error(
+      "newsletter: SUPABASE_SERVICE_ROLE_KEY not set — cannot subscribe.",
+    );
+    return NextResponse.json(
+      { error: "Could not subscribe right now. Please try again later." },
+      { status: 500 },
+    );
+  }
   const { error } = await supabase
     .from("newsletter_subscribers")
     .insert({ email, source: "site" });

@@ -21,17 +21,37 @@ export interface DeliverySetting {
   maxDays: number;
 }
 
+/** Seasonal merchandising band on the homepage (Rakhi, Diwali, weddings). */
+export interface FestiveSetting {
+  enabled: boolean;
+  eyebrow: string;
+  title: string;
+  text: string;
+  ctaLabel: string;
+  ctaHref: string;
+}
+
 interface SettingsMap {
   announcement: AnnouncementSetting;
   delivery: DeliverySetting;
+  festive: FestiveSetting;
 }
 
 export type SettingKey = keyof SettingsMap;
 
-/** Mirrors the rows seeded by supabase/migrations/003_reviews_requests.sql. */
+/** announcement/delivery mirror the rows seeded by migration 003; festive
+ *  defaults ship in code (upserted on first admin save). */
 const DEFAULTS: SettingsMap = {
   announcement: { enabled: false, text: "", href: "" },
   delivery: { dispatchHours: 24, minDays: 3, maxDays: 7 },
+  festive: {
+    enabled: true,
+    eyebrow: "Raksha Bandhan · 28 August",
+    title: "A gift he'll actually keep.",
+    text: "Rakhi gifting, solved — coordinated gift sets, cufflinks and pocket squares in a rigid gift box, ready to give the moment they arrive.",
+    ctaLabel: "Shop Rakhi Gifts",
+    ctaHref: "/shop?tag=gift",
+  },
 };
 
 // ── Raw per-request-cached row read ───────────────────────────────────
@@ -88,6 +108,18 @@ function normalise<K extends SettingKey>(
     };
     return value as SettingsMap[K];
   }
+  if (key === "festive") {
+    const d = DEFAULTS.festive;
+    const value: FestiveSetting = {
+      enabled: raw.enabled === true,
+      eyebrow: toStr(raw.eyebrow, d.eyebrow),
+      title: toStr(raw.title, d.title),
+      text: toStr(raw.text, d.text),
+      ctaLabel: toStr(raw.ctaLabel, d.ctaLabel),
+      ctaHref: toStr(raw.ctaHref, d.ctaHref),
+    };
+    return value as SettingsMap[K];
+  }
   const d = DEFAULTS.delivery;
   const minDays = toInt(raw.minDays, d.minDays);
   const value: DeliverySetting = {
@@ -115,4 +147,8 @@ export function getAnnouncementSetting(): Promise<AnnouncementSetting> {
 
 export function getDeliverySetting(): Promise<DeliverySetting> {
   return getSetting("delivery");
+}
+
+export function getFestiveSetting(): Promise<FestiveSetting> {
+  return getSetting("festive");
 }

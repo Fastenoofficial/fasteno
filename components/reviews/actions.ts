@@ -101,17 +101,32 @@ async function hasPurchased(
   productId: string,
 ): Promise<boolean> {
   try {
+    // "Verified purchase" must mean a REAL purchase: the order is not
+    // cancelled and it was either paid online or is a COD order that actually
+    // progressed past confirmation. Counting any row (as before) let a
+    // customer earn the badge from a COD order they never paid for.
     const { createServiceClient } = await import("@/lib/supabase/service");
     const service = createServiceClient();
     if (service) {
       const { data } = await service
         .from("order_items")
-        .select("id, orders!inner(user_id)")
+        .select("id, orders!inner(user_id, status, payment_status, payment_method)")
         .eq("product_id", productId)
         .eq("orders.user_id", userId)
-        .limit(1);
-      return (data?.length ?? 0) > 0;
+        .neq("orders.status", "cancelled")
+        .limit(20);
+      return (data ?? []).some((row) => {
+        const o = (row as { orders?: { payment_status?: string; payment_method?: string; status?: string } }).orders;
+        if (!o) return false;
+        if (o.payment_status === "paid") return true;
+        return (
+          o.payment_method === "cod" &&
+          ["shipped", "delivered"].includes(o.status ?? "")
+        );
+      });
     }
+    // No service key: the insert can't set verified=true anyway (RLS forces
+    // false), so this path only needs to be safe, not exact.
     const { createClient } = await import("@/lib/supabase/server");
     const supabase = await createClient();
     const { data } = await supabase
@@ -119,6 +134,8 @@ async function hasPurchased(
       .select("id, order_items!inner(product_id)")
       .eq("user_id", userId)
       .eq("order_items.product_id", productId)
+      .eq("payment_status", "paid")
+      .neq("status", "cancelled")
       .limit(1);
     return (data?.length ?? 0) > 0;
   } catch {

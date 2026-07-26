@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { RotateCcw, ShieldCheck, Truck } from "lucide-react";
+import { BookOpen, RotateCcw, ShieldCheck, Truck } from "lucide-react";
 import {
   getCategoryBySlug,
   getProductBySlug,
   getRelatedProducts,
 } from "@/lib/catalog";
 import { formatINR, titleCase } from "@/lib/format";
-import { FREE_SHIPPING_THRESHOLD } from "@/lib/config";
+import { FREE_SHIPPING_THRESHOLD, isShiprocketConfigured } from "@/lib/config";
 import { Badge } from "@/components/ui/Badge";
 import { PriceTag } from "@/components/ui/PriceTag";
 import { ProductCard } from "@/components/ui/ProductCard";
@@ -22,6 +22,7 @@ import { Stars } from "@/components/reviews/Stars";
 import { getProductRating } from "@/components/reviews/data";
 import { ShareButton } from "@/components/product/ShareButton";
 import { DeliveryEstimate } from "@/components/product/DeliveryEstimate";
+import { DeliveryCheck } from "@/components/product/DeliveryCheck";
 import { RecentlyViewed } from "@/components/product/RecentlyViewed";
 
 interface ProductPageProps {
@@ -188,6 +189,22 @@ export default async function ProductPage({ params }: ProductPageProps) {
             {/* share sits alongside the wishlist control above */}
             <ShareButton name={product.name} />
             <DeliveryEstimate />
+            {isShiprocketConfigured && <DeliveryCheck />}
+            <Link
+              href={
+                product.category === "ties"
+                  ? "/guides/how-to-tie-a-tie"
+                  : product.category === "cufflinks"
+                    ? "/guides/cufflink-guide"
+                    : product.category === "pocket-squares"
+                      ? "/guides/silk-care"
+                      : "/guides"
+              }
+              className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] text-muted transition-colors hover:text-gold"
+            >
+              <BookOpen size={13} aria-hidden />
+              Size &amp; care guide
+            </Link>
           </div>
 
           {/* craft details */}

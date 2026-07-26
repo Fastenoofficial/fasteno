@@ -110,7 +110,7 @@ export async function refundOrder(orderId: string): Promise<{
 
   const { data: order, error } = await service
     .from("orders")
-    .select("id, total, payment_method, payment_status, razorpay_payment_id")
+    .select("id, total, payment_method, payment_status, razorpay_payment_id, status")
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(`Could not load the order: ${error.message}`);
@@ -118,6 +118,9 @@ export async function refundOrder(orderId: string): Promise<{
   if (order.payment_status === "refunded") {
     return { refunded: true, refundId: null }; // idempotent
   }
+  // If the order was ALREADY cancelled (admin dropdown / customer request),
+  // that flow restored the stock — this refund must not restore it again.
+  const stockAlreadyRestored = order.status === "cancelled";
   if (order.payment_status !== "paid" && order.payment_method !== "cod") {
     throw new Error("Only paid orders can be refunded.");
   }
@@ -146,17 +149,21 @@ export async function refundOrder(orderId: string): Promise<{
     );
   }
 
-  // Return the stock — best-effort, logged inside restoreStock.
-  const { data: itemRows } = await service
-    .from("order_items")
-    .select("product_id, quantity")
-    .eq("order_id", order.id);
-  if (itemRows && itemRows.length > 0) {
-    const { error: rpcError } = await service.rpc("restore_stock", {
-      items: itemRows,
-    });
-    if (rpcError) {
-      console.error("refund: restore_stock failed —", rpcError.message);
+  // Return the stock — best-effort, logged inside restoreStock. Skipped when
+  // the cancellation flow already returned it (double-restore would silently
+  // inflate inventory and oversell).
+  if (!stockAlreadyRestored) {
+    const { data: itemRows } = await service
+      .from("order_items")
+      .select("product_id, quantity")
+      .eq("order_id", order.id);
+    if (itemRows && itemRows.length > 0) {
+      const { error: rpcError } = await service.rpc("restore_stock", {
+        items: itemRows,
+      });
+      if (rpcError) {
+        console.error("refund: restore_stock failed —", rpcError.message);
+      }
     }
   }
 

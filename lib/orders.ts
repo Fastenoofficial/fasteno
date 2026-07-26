@@ -623,21 +623,50 @@ export async function createSupabaseOrder(
   return { ok: true, order };
 }
 
-/** Fetch a single order (+ items) from Supabase. RLS applies: owners and
- *  admins only — guest orders are surfaced from the checkout response /
- *  local cache instead. */
+/** Fetch a single order (+ items) from Supabase. RLS applies for signed-in
+ *  users (owners and admins). For a visitor with NO session, guest orders
+ *  (user_id IS NULL) are additionally resolvable via the service client:
+ *  the order id is an unguessable UUIDv4 that only ever leaves the system in
+ *  the checkout response and the confirmation email, so possession of the
+ *  link IS the credential — this makes the "View your order" email CTA work
+ *  cross-device instead of dead-ending. Registered users' orders are never
+ *  served this way (they sign in). */
 export async function getSupabaseOrder(id: string): Promise<OrderWithExtras | null> {
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
-  const { data: row, error } = await supabase
+  let { data: row, error } = await supabase
     .from("orders")
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  if (error || !row) return null;
 
-  const { data: itemRows } = await supabase
+  if (error || !row) {
+    // Guest fallback — only when nobody is signed in, and only for rows
+    // that belong to no account.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) return null;
+    const service = createServiceClient();
+    if (!service) return null;
+    const guest = await service
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .is("user_id", null)
+      .maybeSingle();
+    if (guest.error || !guest.data) return null;
+    row = guest.data;
+  }
+
+  // Items: same client rules — service client covers the guest path (the
+  // order_items SELECT policy checks the parent order, invisible to anon).
+  const itemsClient =
+    (row as OrderRow).user_id === null
+      ? (createServiceClient() ?? supabase)
+      : supabase;
+  const { data: itemRows } = await itemsClient
     .from("order_items")
     .select("product_id, name, price, quantity, image")
     .eq("order_id", id);
@@ -674,6 +703,15 @@ export async function markOrderPaid(
   persisted: boolean;
   alreadyPaid: boolean;
   order: OrderWithExtras | null;
+  /** Why persistence failed — lets the webhook decide between retrying
+   *  (transient) and acknowledging (permanent, flagged for manual review). */
+  reason?:
+    | "not_found"
+    | "read_error"
+    | "amount_mismatch"
+    | "order_cancelled"
+    | "update_error"
+    | "raced";
 }> {
   const service = createServiceClient();
   const client =
@@ -681,15 +719,39 @@ export async function markOrderPaid(
 
   const { data: existing, error: readError } = await client
     .from("orders")
-    .select("id, payment_status, total")
+    .select("id, payment_status, status, total")
     .eq("razorpay_order_id", razorpayOrderId)
     .maybeSingle();
   if (readError || !existing) {
     if (readError) console.error("orders: mark-paid read failed —", readError.message);
-    return { persisted: false, alreadyPaid: false, order: null };
+    return {
+      persisted: false,
+      alreadyPaid: false,
+      order: null,
+      reason: readError ? "read_error" : "not_found",
+    };
   }
   if (existing.payment_status === "paid") {
     return { persisted: true, alreadyPaid: true, order: null };
+  }
+
+  // A capture landing on a CANCELLED order (customer cancelled while the
+  // widget was open, or admin cancelled a stale one) must NOT resurrect it:
+  // its stock was already restored on cancellation, so flipping it back to
+  // confirmed would oversell. The money IS captured — flag loudly for a
+  // manual refund instead.
+  if (existing.status === "cancelled") {
+    console.error(
+      `orders: PAYMENT CAPTURED FOR CANCELLED ORDER ${existing.id} ` +
+        `(razorpay order ${razorpayOrderId}, payment ${razorpayPaymentId}). ` +
+        `Order left cancelled — REFUND THIS PAYMENT manually from the Razorpay dashboard.`,
+    );
+    return {
+      persisted: false,
+      alreadyPaid: false,
+      order: null,
+      reason: "order_cancelled",
+    };
   }
 
   // Defence in depth: when the caller has an AUTHENTIC captured amount (the
@@ -706,7 +768,12 @@ export async function markOrderPaid(
         `expected ${existing.total} paise, captured ${opts.capturedAmount}. ` +
         `Order NOT marked paid; needs manual review.`,
     );
-    return { persisted: false, alreadyPaid: false, order: null };
+    return {
+      persisted: false,
+      alreadyPaid: false,
+      order: null,
+      reason: "amount_mismatch",
+    };
   }
   const wasFailed = existing.payment_status === "failed";
 
@@ -719,14 +786,21 @@ export async function markOrderPaid(
     })
     .eq("id", existing.id)
     .in("payment_status", ["pending", "failed"])
+    .neq("status", "cancelled")
     .select("*");
 
   if (error) {
     console.error("orders: mark-paid failed —", error.message);
-    return { persisted: false, alreadyPaid: false, order: null };
+    return {
+      persisted: false,
+      alreadyPaid: false,
+      order: null,
+      reason: "update_error",
+    };
   }
   const row = (data ?? [])[0] as OrderRow | undefined;
-  if (!row) return { persisted: false, alreadyPaid: false, order: null };
+  if (!row)
+    return { persisted: false, alreadyPaid: false, order: null, reason: "raced" };
 
   const { data: itemRows } = await client
     .from("order_items")
@@ -758,7 +832,19 @@ export async function markOrderPaid(
   // Razorpay, so an abandoned/failed online checkout no longer burns a
   // redemption. COD still counts at placement (the order is confirmed there).
   if (paidOrder.couponCode) {
-    incrementCouponUsage(paidOrder.couponCode).catch(() => {});
+    // Awaited: an un-awaited promise is dropped when the serverless function
+    // freezes after the response. incrementCouponUsage never throws.
+    await incrementCouponUsage(paidOrder.couponCode);
+  }
+
+  // Optional auto-booking of the courier the moment payment clears. Gated on
+  // SHIPROCKET_AUTO_SHIP=1 (default off) and never throws, so a courier
+  // outage can't turn a captured payment into an error response.
+  try {
+    const { autoShipIfEnabled } = await import("@/lib/shipping-sync");
+    await autoShipIfEnabled(paidOrder.id);
+  } catch (err) {
+    console.error("orders: auto-ship hook failed —", (err as Error).message);
   }
 
   return { persisted: true, alreadyPaid: false, order: paidOrder };
@@ -780,11 +866,14 @@ export async function markOrderPaymentFailed(
     return { updated: false };
   }
 
+  // neq cancelled: a customer/admin cancellation already restored the stock
+  // for this order — flipping it here too would restore it a second time.
   const { data, error } = await service
     .from("orders")
     .update({ payment_status: "failed" })
     .eq("razorpay_order_id", razorpayOrderId)
     .eq("payment_status", "pending")
+    .neq("status", "cancelled")
     .select("id");
   if (error) {
     console.error("orders: mark-failed failed —", error.message);
@@ -830,11 +919,14 @@ export async function reapStalePendingRazorpayOrders(
   const cutoffIso = new Date(
     Date.now() - olderThanMinutes * 60_000,
   ).toISOString();
+  // neq cancelled: cancelled orders already had their stock restored by the
+  // cancellation flow — reaping them again would double-restore.
   const { data: stale, error } = await service
     .from("orders")
     .select("id, order_items(product_id, quantity)")
     .eq("payment_method", "razorpay")
     .eq("payment_status", "pending")
+    .neq("status", "cancelled")
     .lt("created_at", cutoffIso)
     .limit(100);
   if (error) {
@@ -845,12 +937,14 @@ export async function reapStalePendingRazorpayOrders(
 
   let reaped = 0;
   for (const o of stale) {
-    // Guarded flip — only if still pending (skips a concurrent capture).
+    // Guarded flip — only if still pending and not cancelled meanwhile
+    // (skips a concurrent capture or cancellation).
     const { data: flipped } = await service
       .from("orders")
       .update({ payment_status: "failed" })
       .eq("id", o.id)
       .eq("payment_status", "pending")
+      .neq("status", "cancelled")
       .select("id");
     if (!flipped || flipped.length === 0) continue;
 

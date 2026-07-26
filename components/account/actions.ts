@@ -248,12 +248,17 @@ export async function submitOrderRequest(input: {
           throw new Error(
             "SUPABASE_SERVICE_ROLE_KEY not set — cannot cancel instantly.",
           );
-        const { error: cancelError } = await service
+        const { data: flipped, error: cancelError } = await service
           .from("orders")
           .update({ status: "cancelled" })
           .eq("id", order.id)
-          .in("status", CANCELLABLE_STATUSES);
+          .in("status", CANCELLABLE_STATUSES)
+          .select("id");
         if (cancelError) throw new Error(cancelError.message);
+        // Restore stock ONLY when this call actually did the flip — a
+        // concurrent admin cancel/reap already restored it otherwise.
+        const didCancel = (flipped ?? []).length > 0;
+        if (!didCancel) throw new Error("Order state changed — please refresh.");
 
         // Skip restore for failed payments — the payment-failed handler
         // already returned that stock.

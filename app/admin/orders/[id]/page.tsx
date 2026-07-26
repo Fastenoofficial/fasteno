@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Mail, MessageCircle } from "lucide-react";
-import { isDemoMode } from "@/lib/config";
+import { isDemoMode, isShiprocketConfigured } from "@/lib/config";
 import { mapOrderRow, requireAdmin, type OrderRow } from "@/lib/auth";
 import { formatDate, formatINR } from "@/lib/format";
 import {
@@ -26,6 +26,8 @@ interface OrderExtras {
   tracking_url: string | null;
   coupon_code: string | null;
   discount: number | null;
+  shiprocket_status: string | null;
+  shiprocket_synced_at: string | null;
 }
 
 export default async function AdminOrderDetailPage({
@@ -42,7 +44,7 @@ export default async function AdminOrderDetailPage({
   const { data } = await supabase
     .from("orders")
     .select(
-      "id, order_number, user_id, email, phone, shipping_address, subtotal, shipping_fee, total, payment_method, payment_status, razorpay_order_id, razorpay_payment_id, status, created_at, courier, awb_number, tracking_url, coupon_code, discount, order_items(id, product_id, name, price, quantity, image)",
+      "id, order_number, user_id, email, phone, shipping_address, subtotal, shipping_fee, total, payment_method, payment_status, razorpay_order_id, razorpay_payment_id, status, created_at, courier, awb_number, tracking_url, coupon_code, discount, shiprocket_status, shiprocket_synced_at, order_items(id, product_id, name, price, quantity, image)",
     )
     .eq("id", id)
     .single();
@@ -161,6 +163,9 @@ export default async function AdminOrderDetailPage({
             courier={extras.courier}
             awbNumber={extras.awb_number}
             trackingUrl={extras.tracking_url}
+            shiprocketEnabled={isShiprocketConfigured}
+            shiprocketStatus={extras.shiprocket_status}
+            shiprocketSyncedAt={extras.shiprocket_synced_at}
           />
 
           <div className="border border-line bg-card p-5">

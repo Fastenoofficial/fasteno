@@ -52,7 +52,7 @@ export interface EmailOrder {
   createdAt: string; // ISO
 }
 
-export type OrderEmailKind = "confirmation" | "shipped";
+export type OrderEmailKind = "confirmation" | "shipped" | "delivered";
 
 // ── Brand palette (inline styles only — email clients strip <style>) ──
 
@@ -345,6 +345,73 @@ function shippedEmail(order: EmailOrder): {
   return { subject, html: shell(`Order ${order.orderNumber} shipped via ${courier}.`, body), text };
 }
 
+// ── Delivered ──────────────────────────────────────────────────────────
+
+/** Sent once, when the courier reports delivery. Doubles as the notice that
+ *  starts the 7-day return window promised on /shipping-returns. */
+function deliveredEmail(order: EmailOrder): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const orderUrl = `${SITE_URL}/order/${order.id}`;
+  const subject = `Order ${order.orderNumber} delivered — ${SITE_NAME}`;
+
+  const itemsSummary = order.items
+    .map(
+      (i) => `
+      <li style="margin:4px 0;font-family:${SANS};font-size:13px;color:${IVORY};">
+        ${esc(i.name)} <span style="color:${MUTED};">× ${i.quantity}</span>
+      </li>`,
+    )
+    .join("");
+
+  const body = `
+    ${eyebrow("Delivered")}
+    <h1 style="margin:0;font-family:${SERIF};font-size:26px;font-weight:normal;line-height:1.3;color:${IVORY};">Your order has arrived.</h1>
+    <p style="margin:14px 0 0;font-family:${SANS};font-size:13px;line-height:1.7;color:${MUTED};">
+      Order <span style="color:${GOLD};font-weight:600;">${esc(order.orderNumber)}</span>
+      has been delivered. We hope it is everything you hoped for.
+    </p>
+
+    <div style="margin-top:28px;">
+      ${eyebrow("What arrived")}
+      <ul style="margin:6px 0 0;padding-left:18px;">${itemsSummary}</ul>
+    </div>
+
+    <p style="margin:26px 0 0;font-family:${SANS};font-size:12px;line-height:1.7;color:${MUTED};">
+      Something not right? You have <span style="color:${IVORY};">7 days</span> from
+      today to request a return or exchange — just reply to this email or write
+      to <a href="mailto:${esc(SUPPORT_EMAIL)}" style="color:${GOLD};text-decoration:none;">${esc(SUPPORT_EMAIL)}</a>
+      with your order number.
+    </p>
+
+    ${ctaButton(orderUrl, "View your order")}
+  `;
+
+  const text = [
+    `${SITE_NAME} — Order delivered`,
+    ``,
+    `Order ${order.orderNumber} has been delivered.`,
+    ``,
+    `What arrived:`,
+    ...order.items.map((i) => `  - ${i.name} × ${i.quantity}`),
+    ``,
+    `Something not right? You have 7 days from today to request a return or`,
+    `exchange — write to ${SUPPORT_EMAIL} with your order number.`,
+    ``,
+    `Order details: ${orderUrl}`,
+    ``,
+    `${LEGAL_ENTITY_NAME} · ${SUPPORT_EMAIL} · ${SUPPORT_PHONE}`,
+  ].join("\n");
+
+  return {
+    subject,
+    html: shell(`Order ${order.orderNumber} has been delivered.`, body),
+    text,
+  };
+}
+
 // ── Owner "new order" alert ────────────────────────────────────────────
 
 function ownerAlertEmail(order: EmailOrder): {
@@ -423,7 +490,11 @@ export async function sendOrderEmail(
       process.env.EMAIL_FROM ?? "Fasteno Shyama <orders@fasteno.in>";
 
     const { subject, html, text } =
-      kind === "confirmation" ? confirmationEmail(order) : shippedEmail(order);
+      kind === "confirmation"
+        ? confirmationEmail(order)
+        : kind === "delivered"
+          ? deliveredEmail(order)
+          : shippedEmail(order);
 
     const { error } = await resend.emails.send({
       from,

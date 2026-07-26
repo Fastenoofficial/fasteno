@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateOrderTracking } from "@/components/admin/actions";
+import {
+  shipOrderWithShiprocket,
+  syncShiprocketStatus,
+  updateOrderTracking,
+} from "@/components/admin/actions";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -46,6 +50,12 @@ interface ShippingTrackingCardProps {
   courier: string | null;
   awbNumber: string | null;
   trackingUrl: string | null;
+  /** Whether Shiprocket credentials are present (resolved on the server —
+   *  the client must never see the credentials themselves). */
+  shiprocketEnabled?: boolean;
+  /** Latest raw courier status, when Shiprocket has reported one. */
+  shiprocketStatus?: string | null;
+  shiprocketSyncedAt?: string | null;
 }
 
 export function ShippingTrackingCard({
@@ -54,6 +64,9 @@ export function ShippingTrackingCard({
   courier: initialCourier,
   awbNumber: initialAwb,
   trackingUrl: initialUrl,
+  shiprocketEnabled = false,
+  shiprocketStatus = null,
+  shiprocketSyncedAt = null,
 }: ShippingTrackingCardProps) {
   const knownCourier = COURIERS.some((c) => c.name === initialCourier);
   const [courierChoice, setCourierChoice] = useState(
@@ -93,9 +106,102 @@ export function ShippingTrackingCard({
     });
   }
 
+  // ── Shiprocket ──
+  const [srError, setSrError] = useState<string | null>(null);
+  const [srNote, setSrNote] = useState<string | null>(null);
+  const [srPending, startSrTransition] = useTransition();
+  const alreadyBooked = Boolean(initialAwb?.trim());
+
+  function handleShipNow() {
+    setSrError(null);
+    setSrNote(null);
+    startSrTransition(async () => {
+      const result = await shipOrderWithShiprocket(orderId);
+      if (result.error) {
+        setSrError(result.error);
+        return;
+      }
+      setSrNote(
+        `Booked with ${result.courier ?? "courier"} — AWB ${result.awbNumber}. The customer has been emailed.`,
+      );
+      // Reflect the booking in the manual fields without a full reload.
+      if (result.awbNumber) setAwb(result.awbNumber);
+      if (result.courier) {
+        const known = COURIERS.some((c) => c.name === result.courier);
+        setCourierChoice(known ? result.courier! : OTHER);
+        if (!known) setCustomCourier(result.courier!);
+      }
+    });
+  }
+
+  function handleRefreshStatus() {
+    setSrError(null);
+    setSrNote(null);
+    startSrTransition(async () => {
+      const result = await syncShiprocketStatus(orderId);
+      if (result.error) setSrError(result.error);
+      else setSrNote(`Courier status: ${result.rawStatus ?? "unknown"}.`);
+    });
+  }
+
   return (
     <div className="space-y-4 border border-line bg-card p-5">
       <h3 className="font-display text-lg text-ivory">Shipping / Tracking</h3>
+
+      {shiprocketEnabled && (
+        <div className="space-y-3 border border-line/60 bg-ink/40 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold">
+              Shiprocket
+            </p>
+            {shiprocketStatus && (
+              <span className="text-xs text-muted">{shiprocketStatus}</span>
+            )}
+          </div>
+
+          {alreadyBooked ? (
+            <p className="text-xs leading-relaxed text-muted">
+              Already booked — AWB{" "}
+              <span className="text-ivory">{initialAwb}</span>. Cancel the
+              shipment in Shiprocket before booking again.
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-muted">
+              Creates the shipment, books a courier and emails the customer —
+              in one step.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button
+              type="button"
+              variant={alreadyBooked ? "ghost" : "primary"}
+              size="sm"
+              onClick={handleShipNow}
+              disabled={srPending || pending || alreadyBooked || status === "cancelled"}
+            >
+              {srPending ? "Working…" : "Ship with Shiprocket"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleRefreshStatus}
+              disabled={srPending || pending || !alreadyBooked}
+            >
+              Refresh status
+            </Button>
+          </div>
+
+          {shiprocketSyncedAt && (
+            <p className="text-[11px] text-muted">
+              Last synced {new Date(shiprocketSyncedAt).toLocaleString("en-IN")}
+            </p>
+          )}
+          {srNote && <p className="text-xs text-success">{srNote}</p>}
+          {srError && <p className="text-xs text-danger">{srError}</p>}
+        </div>
+      )}
 
       <Select
         label="Courier"
