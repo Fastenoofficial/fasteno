@@ -19,7 +19,7 @@ import { ProductJsonLd } from "@/components/seo/ProductJsonLd";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { ReviewsSection } from "@/components/reviews/ReviewsSection";
 import { Stars } from "@/components/reviews/Stars";
-import { getProductRating } from "@/components/reviews/data";
+import { getProductRating, getProductReviews } from "@/components/reviews/data";
 import { ShareButton } from "@/components/product/ShareButton";
 import { DeliveryEstimate } from "@/components/product/DeliveryEstimate";
 import { DeliveryCheck } from "@/components/product/DeliveryCheck";
@@ -61,6 +61,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
     getRelatedProducts(product, 4),
     getProductRating(product.id),
   ]);
+  // Review items for the Product JSON-LD — skipped entirely while the
+  // product has no approved reviews (today's common case).
+  const jsonLdReviews =
+    rating.count > 0 ? await getProductReviews(product.id) : [];
   const categoryName = category?.name ?? titleCase(product.category);
 
   const outOfStock = product.stock === 0;
@@ -68,7 +72,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16">
-      <ProductJsonLd product={product} rating={rating} />
+      <ProductJsonLd product={product} rating={rating} reviews={jsonLdReviews} />
       <BreadcrumbJsonLd
         items={[
           { name: "Home", url: "/" },
