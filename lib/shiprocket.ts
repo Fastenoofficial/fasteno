@@ -120,9 +120,18 @@ async function api<T>(
       return api<T>(path, init, false);
     }
 
-    const text = await safeText(res);
+    // Read the FULL body — success payloads (serviceability, AWB assign,
+    // tracking) run to many kilobytes, and parsing a truncated body would
+    // turn every large success into a phantom failure. Truncate only what
+    // gets logged.
+    let text: string;
+    try {
+      text = await res.text();
+    } catch {
+      text = "";
+    }
     if (!res.ok) {
-      console.error(`shiprocket: ${path} → ${res.status}`, text);
+      console.error(`shiprocket: ${path} → ${res.status}`, text.slice(0, 400));
       return { ok: false, error: extractMessage(text, res.status) };
     }
 
