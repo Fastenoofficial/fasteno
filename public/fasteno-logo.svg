@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" fill="none">
+  <!-- F symbol -->
+  <path d="M568 193L847 288L651 288L651 360L818 360L818 454L651 454L651 643L568 643L568 193Z" fill="currentColor"/>
+  <path d="M568 193L847 193L847 287L651 287L651 360L818 360L818 454L651 454L651 643L568 643L568 193Z" fill="currentColor"/>
+  
+  <!-- FASTENO text -->
+  <text x="200" y="590" font-family="system-ui, -apple-system, sans-serif" font-size="180" font-weight="900" fill="currentColor" letter-spacing="40">FASTENO</text>
+  
+  <!-- EXCLUSIVE ACCESSORIES -->
+  <line x1="210" y1="650" x2="270" y2="650" stroke="currentColor" stroke-width="2"/>
+  <text x="358" y="655" font-family="system-ui, -apple-system, sans-serif" font-size="36" fill="currentColor" letter-spacing="20">EXCLUSIVE ACCESSORIES</text>
+  <line x1="1010" y1="650" x2="1190" y2="650" stroke="currentColor" stroke-width="2"/>
+</svg>

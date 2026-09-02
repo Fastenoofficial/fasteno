@@ -44,10 +44,10 @@ export function Navbar() {
         {/* brand */}
         <Link href="/" className="flex flex-col items-center leading-none">
           <span className="font-display text-lg tracking-[0.18em] text-ivory sm:text-xl">
-            {SITE_NAME.toUpperCase()}
+            FASTENO.IN
           </span>
           <span className="mt-0.5 hidden text-[9px] uppercase tracking-[0.4em] text-gold sm:block">
-            Fine Accessories
+            Exclusive Accessories
           </span>
         </Link>
 

@@ -1,7 +1,7 @@
 /** Site-wide configuration and live/demo mode detection. */
 
-export const SITE_NAME = "Fasteno Shyama";
-export const SITE_TAGLINE = "The finishing touch.";
+export const SITE_NAME = "Fasteno.in";
+export const SITE_TAGLINE = "Exclusive Accessories";
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
