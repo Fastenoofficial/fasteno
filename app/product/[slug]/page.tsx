@@ -61,6 +61,8 @@ export async function generateStaticParams() {
 
 // Revalidate every 5 minutes - balance between freshness and speed
 export const revalidate = 300;
+export const dynamicParams = true;
+export const dynamic = 'force-static';
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
