@@ -50,8 +50,17 @@ export async function generateMetadata({
 
 const LOW_STOCK_AT = 5;
 
-// Revalidate every 60 seconds - fresh data without sacrificing speed
-export const revalidate = 60;
+// Pre-generate all product pages at build time
+export async function generateStaticParams() {
+  const { getAllProducts } = await import("@/lib/catalog");
+  const products = await getAllProducts();
+  return products.map((product) => ({
+    slug: product.slug,
+  }));
+}
+
+// Revalidate every 5 minutes - balance between freshness and speed
+export const revalidate = 300;
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;

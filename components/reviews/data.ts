@@ -65,8 +65,8 @@ export async function getProductRating(
   productId: string,
 ): Promise<ProductRating> {
   if (!isSupabaseConfigured) return { count: 0, average: 0 };
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  const { createPublicClient } = await import("@/lib/supabase/server");
+  const supabase = createPublicClient();
   const { data, error } = await supabase.rpc("product_rating", {
     p_product_id: productId,
   });
@@ -81,14 +81,15 @@ export async function getProductReviews(
   productId: string,
 ): Promise<Review[]> {
   if (!isSupabaseConfigured) return [];
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  const { createPublicClient } = await import("@/lib/supabase/server");
+  const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("reviews")
     .select(
       "id, product_id, user_id, author_name, rating, title, body, verified, status, admin_reply, created_at",
     )
     .eq("product_id", productId)
+    .eq("status", "approved")
     .order("created_at", { ascending: false });
   if (error || !data) return [];
   return (data as ReviewRow[]).map(mapReviewRow);

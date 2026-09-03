@@ -59,8 +59,8 @@ export function mapProductRow(row: ProductRow): Product {
 
 async function fetchAllProducts(): Promise<Product[]> {
   if (!isSupabaseConfigured) return seedProducts;
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  const { createPublicClient } = await import("@/lib/supabase/server");
+  const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("products")
     .select(
@@ -94,8 +94,8 @@ async function fetchAllProducts(): Promise<Product[]> {
 
 export async function getCategories(): Promise<Category[]> {
   if (!isSupabaseConfigured) return seedCategories;
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  const { createPublicClient } = await import("@/lib/supabase/server");
+  const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("categories")
     .select("id, slug, name, description, sort_order")
