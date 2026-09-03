@@ -222,3 +222,8 @@ export async function getFilterOptions(category?: string) {
     maxPrice: products.reduce((m, p) => Math.max(m, p.price), 0),
   };
 }
+
+/** All active products — used for static generation at build time. */
+export async function getAllProducts(): Promise<Product[]> {
+  return (await fetchAllProducts()).filter((p) => p.active);
+}
