@@ -28,6 +28,7 @@ const links = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/products", label: "Products", icon: Package },
   { href: "/admin/categories", label: "Categories", icon: Grid },
+  { href: "/admin/featured", label: "Featured", icon: Star },
   { href: "/admin/banners", label: "Banners", icon: Image },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, countKey: "orders" as const },
   { href: "/admin/customers", label: "Customers", icon: Users },
