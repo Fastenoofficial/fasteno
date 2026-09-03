@@ -1,22 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import {
   getCategories,
   getCategoryBySlug,
   getFilterOptions,
-  getProducts,
+  getAllProducts,
 } from "@/lib/catalog";
-import { ProductListing } from "@/components/catalog/ProductListing";
-import {
-  parseListingParams,
-  toProductQuery,
-  type ListingSearchParams,
-} from "@/components/catalog/query";
+import CategoryClient from "./category-client";
 
 interface CategoryPageProps {
   params: Promise<{ category: string }>;
-  searchParams: Promise<ListingSearchParams>;
 }
 
 export async function generateMetadata({
@@ -31,20 +26,40 @@ export async function generateMetadata({
   };
 }
 
-export default async function CategoryPage({
-  params,
-  searchParams,
-}: CategoryPageProps) {
-  const [{ category }, sp] = await Promise.all([params, searchParams]);
-  const cat = await getCategoryBySlug(category);
-  if (!cat) notFound();
+// Pre-generate all category pages at build time
+export async function generateStaticParams() {
+  const categories = await getCategories();
+  return categories.map((cat) => ({
+    category: cat.slug,
+  }));
+}
 
-  const listing = parseListingParams(sp);
-  const [products, options, categories] = await Promise.all([
-    getProducts(toProductQuery(listing, cat.slug)),
-    getFilterOptions(cat.slug),
+// Force static rendering with ISR
+export const dynamic = 'force-static';
+export const revalidate = 3600;
+
+async function getCategoryData(categorySlug: string) {
+  const [allProducts, cat, options, categories] = await Promise.all([
+    getAllProducts(),
+    getCategoryBySlug(categorySlug),
+    getFilterOptions(categorySlug),
     getCategories(),
   ]);
+
+  // Filter products for this category
+  const products = allProducts.filter((p) => p.category === categorySlug);
+
+  return { products, category: cat, options, categories };
+}
+
+export default async function CategoryPage({
+  params,
+}: CategoryPageProps) {
+  const { category } = await params;
+  const data = await getCategoryData(category);
+  if (!data.category) notFound();
+
+  const cat = data.category;
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16">
@@ -91,7 +106,7 @@ export default async function CategoryPage({
         >
           All
         </Link>
-        {categories.map((c) =>
+        {data.categories.map((c) =>
           c.slug === cat.slug ? (
             <span
               key={c.slug}
@@ -111,12 +126,9 @@ export default async function CategoryPage({
         )}
       </nav>
 
-      <ProductListing
-        basePath={`/shop/${cat.slug}`}
-        products={products}
-        params={listing}
-        options={options}
-      />
+      <Suspense fallback={<div className="text-muted">Loading...</div>}>
+        <CategoryClient {...data} category={cat} />
+      </Suspense>
     </section>
   );
 }

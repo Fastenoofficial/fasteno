@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getCategories, getFilterOptions, getProducts } from "@/lib/catalog";
-import { ProductListing } from "@/components/catalog/ProductListing";
-import {
-  parseListingParams,
-  toProductQuery,
-  type ListingSearchParams,
-} from "@/components/catalog/query";
+import { Suspense } from "react";
+import { getAllProducts, getCategories, getFilterOptions } from "@/lib/catalog";
+import ShopClient from "./shop-client";
 
 export const metadata: Metadata = {
   title: "Shop All Accessories",
@@ -14,17 +10,22 @@ export const metadata: Metadata = {
     "Browse the full Fasteno Shyama collection — silk ties, cufflinks, brooches, pocket squares, buttons and gift sets. Filter by colour, material, pattern, price and occasion.",
 };
 
-export default async function ShopPage({
-  searchParams,
-}: {
-  searchParams: Promise<ListingSearchParams>;
-}) {
-  const params = parseListingParams(await searchParams);
+// Force static rendering with ISR
+export const dynamic = 'force-static';
+export const revalidate = 3600;
+
+async function getStaticShopData() {
   const [products, options, categories] = await Promise.all([
-    getProducts(toProductQuery(params)),
+    getAllProducts(),
     getFilterOptions(),
     getCategories(),
   ]);
+
+  return { products, options, categories };
+}
+
+export default async function ShopPage() {
+  const data = await getStaticShopData();
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16">
@@ -49,7 +50,7 @@ export default async function ShopPage({
         <span className="inline-flex items-center border border-block bg-block px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-block-text">
           All
         </span>
-        {categories.map((c) => (
+        {data.categories.map((c) => (
           <Link
             key={c.slug}
             href={`/shop/${c.slug}`}
@@ -60,12 +61,9 @@ export default async function ShopPage({
         ))}
       </nav>
 
-      <ProductListing
-        basePath="/shop"
-        products={products}
-        params={params}
-        options={options}
-      />
+      <Suspense fallback={<div className="text-muted">Loading...</div>}>
+        <ShopClient {...data} />
+      </Suspense>
     </section>
   );
 }
