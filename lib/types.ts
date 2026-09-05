@@ -15,6 +15,8 @@ export interface Category {
   name: string;
   description: string;
   sortOrder: number;
+  image_url?: string;
+  display_on_home?: boolean;
 }
 
 export type Pattern = "solid" | "striped" | "textured" | "printed";

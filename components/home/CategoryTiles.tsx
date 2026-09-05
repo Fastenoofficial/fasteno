@@ -13,9 +13,12 @@ const categoryArt: Record<string, string> = {
 
 /** Six-tile category grid linking into the shop. Server component. */
 export function CategoryTiles({ categories }: { categories: Category[] }) {
+  // Filter to only display categories marked for home page display
+  const displayCategories = categories.filter((cat) => cat.display_on_home !== false);
+
   return (
     <div className="grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-3">
-      {categories.map((category) => (
+      {displayCategories.map((category) => (
         <Link
           key={category.slug}
           href={`/shop/${category.slug}`}
@@ -23,7 +26,7 @@ export function CategoryTiles({ categories }: { categories: Category[] }) {
         >
           <div className="aspect-[4/3] overflow-hidden bg-surface">
             <img
-              src={categoryArt[category.slug] ?? `/products/${category.slug}.svg`}
+              src={category.image_url || categoryArt[category.slug] || `/products/${category.slug}.svg`}
               alt={category.name}
               loading="lazy"
               className="h-full w-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-[1.05]"
