@@ -42,13 +42,12 @@ export function Navbar() {
         </button>
 
         {/* brand */}
-        <Link href="/" className="flex flex-col items-center leading-none">
-          <span className="font-display text-lg tracking-[0.18em] text-ivory sm:text-xl">
-            FASTENO.IN
-          </span>
-          <span className="mt-0.5 hidden text-[9px] uppercase tracking-[0.4em] text-gold sm:block">
-            Exclusive Accessories
-          </span>
+        <Link href="/" className="flex items-center">
+          <img
+            src="/branding/fasteno-logo.png"
+            alt="Fasteno.in - Exclusive Accessories"
+            className="h-10 w-auto sm:h-12"
+          />
         </Link>
 
         {/* desktop links */}

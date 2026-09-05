@@ -48,12 +48,11 @@ export function Footer() {
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         {/* brand */}
         <div>
-          <p className="font-display text-lg tracking-[0.18em] text-block-text">
-            {SITE_NAME.toUpperCase()}
-          </p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.4em] text-gold-light">
-            Fine Accessories
-          </p>
+          <img
+            src="/branding/fasteno-logo.png"
+            alt="Fasteno.in"
+            className="h-10 w-auto mb-4"
+          />
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-block-text/65">
             {SITE_TAGLINE} Ties, cufflinks, brooches, pocket squares and
             buttons — curated for the well-finished man.
