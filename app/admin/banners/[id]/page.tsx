@@ -122,14 +122,31 @@ export default async function EditBannerPage({
             
           />
 
-          <Input
-            label="Desktop Image URL"
-            name="image_url"
-            defaultValue={banner.image_url}
-            placeholder="https://..."
-            required
-            
-          />
+          <div className="space-y-2">
+            <label htmlFor="image_url" className="block text-sm font-medium text-ivory">
+              Desktop Image URL <span className="text-danger">*</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="image_url"
+                name="image_url"
+                type="text"
+                defaultValue={banner.image_url}
+                placeholder="https://..."
+                required
+                className="flex-1 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory placeholder:text-muted focus:border-gold focus:outline-none"
+              />
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory hover:border-gold">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  data-upload-target="image_url"
+                />
+                Upload
+              </label>
+            </div>
+          </div>
 
           {banner.image_url && (
             <div className="space-y-2">
@@ -142,13 +159,30 @@ export default async function EditBannerPage({
             </div>
           )}
 
-          <Input
-            label="Mobile Image URL (optional)"
-            name="mobile_image_url"
-            defaultValue={banner.mobile_image_url || ""}
-            placeholder="https://..."
-            
-          />
+          <div className="space-y-2">
+            <label htmlFor="mobile_image_url" className="block text-sm font-medium text-ivory">
+              Mobile Image URL (optional)
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="mobile_image_url"
+                name="mobile_image_url"
+                type="text"
+                defaultValue={banner.mobile_image_url || ""}
+                placeholder="https://..."
+                className="flex-1 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory placeholder:text-muted focus:border-gold focus:outline-none"
+              />
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory hover:border-gold">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  data-upload-target="mobile_image_url"
+                />
+                Upload
+              </label>
+            </div>
+          </div>
 
           {banner.mobile_image_url && (
             <div className="space-y-2">
@@ -190,6 +224,52 @@ export default async function EditBannerPage({
           </Button>
         </div>
       </form>
+
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            // Image upload handler for all upload buttons
+            document.querySelectorAll('input[type="file"][data-upload-target]').forEach(input => {
+              input.addEventListener('change', async function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const targetInput = document.getElementById(e.target.dataset.uploadTarget);
+                if (!targetInput) return;
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                  const btn = e.target.parentElement;
+                  btn.style.opacity = '0.5';
+                  btn.style.pointerEvents = 'none';
+                  btn.textContent = 'Uploading...';
+
+                  const response = await fetch('/api/admin/upload', {
+                    method: 'POST',
+                    body: formData
+                  });
+
+                  if (!response.ok) throw new Error('Upload failed');
+
+                  const data = await response.json();
+                  targetInput.value = data.url;
+                  btn.textContent = 'Upload';
+                  btn.style.opacity = '1';
+                  btn.style.pointerEvents = 'auto';
+                } catch (error) {
+                  alert('Upload failed: ' + error.message);
+                  const btn = e.target.parentElement;
+                  btn.textContent = 'Upload';
+                  btn.style.opacity = '1';
+                  btn.style.pointerEvents = 'auto';
+                }
+              });
+            });
+          `,
+        }}
+      />
     </div>
   );
 }

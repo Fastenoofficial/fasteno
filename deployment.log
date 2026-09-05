@@ -1,0 +1,22 @@
+<claude-code-hint v="1" type="plugin" value="vercel@claude-plugins-official" />
+Vercel CLI 59.1.4 (Node.js 24.12.0)
+WARNING! `--confirm` is deprecated, please use `--yes` instead
+Deploying fasteno-shyama
+Uploading [--------------------] (0.0B/8.7KB)
+Uploading [=======-------------] (3.2KB/8.7KB)
+Uploading [====================] (8.7KB/8.7KB)
+  Inspect         https://vercel.com/fasteno/fasteno-shyama/Gwi5uu6GtrmwpDi2n1fc57bEu5QH
+  Production      https://fasteno-shyama-e3nld95lj-fasteno.vercel.app
+Building…
+{
+  "status": "error",
+  "reason": "deploy_failed",
+  "message": "fetch failed",
+  "next": [
+    {
+      "command": "vercel deploy",
+      "when": "retry deploy"
+    }
+  ]
+}
+Error: fetch failed

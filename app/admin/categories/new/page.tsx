@@ -85,12 +85,29 @@ export default async function NewCategoryPage({
             
           />
 
-          <Input
-            label="Image URL (optional)"
-            name="image_url"
-            placeholder="https://..."
-            
-          />
+          <div className="space-y-2">
+            <label htmlFor="image_url" className="block text-sm font-medium text-ivory">
+              Image URL (optional)
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="image_url"
+                name="image_url"
+                type="text"
+                placeholder="https://..."
+                className="flex-1 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory placeholder:text-muted focus:border-gold focus:outline-none"
+              />
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-line bg-surface px-4 py-3 text-sm text-ivory hover:border-gold">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  data-upload-target="image_url"
+                />
+                Upload
+              </label>
+            </div>
+          </div>
 
           <label className="flex cursor-pointer items-center gap-3 text-sm text-ivory">
             <input
@@ -125,6 +142,44 @@ export default async function NewCategoryPage({
                   .replace(/[^\\w\\s-]/g, '')
                   .replace(/[\\s_-]+/g, '-')
                   .replace(/^-+|-+$/g, '');
+              }
+            });
+
+            // Image upload handler
+            document.querySelector('input[type="file"][data-upload-target]')?.addEventListener('change', async function(e) {
+              const file = e.target.files[0];
+              if (!file) return;
+
+              const targetInput = document.getElementById(e.target.dataset.uploadTarget);
+              if (!targetInput) return;
+
+              const formData = new FormData();
+              formData.append('file', file);
+
+              try {
+                const btn = e.target.parentElement;
+                btn.style.opacity = '0.5';
+                btn.style.pointerEvents = 'none';
+                btn.textContent = 'Uploading...';
+
+                const response = await fetch('/api/admin/upload', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                if (!response.ok) throw new Error('Upload failed');
+
+                const data = await response.json();
+                targetInput.value = data.url;
+                btn.textContent = 'Upload';
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+              } catch (error) {
+                alert('Upload failed: ' + error.message);
+                const btn = e.target.parentElement;
+                btn.textContent = 'Upload';
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
               }
             });
           `,
