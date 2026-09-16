@@ -9,6 +9,7 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 .release-*/
+supabase/.temp/
 .DS_Store
 
 .env*

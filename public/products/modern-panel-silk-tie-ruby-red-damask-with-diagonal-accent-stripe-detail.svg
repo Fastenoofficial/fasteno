@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000" role="img" aria-labelledby="title desc">
+<title id="title">Modern Panel Silk Tie – Ruby Red Damask with Diagonal Accent Stripe</title><desc id="desc">Temporary Fasteno illustrated product image</desc>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f0e8"/><stop offset="1" stop-color="#ddd2c1"/></linearGradient><linearGradient id="fabric" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2f2630"/><stop offset=".52" stop-color="#705468"/><stop offset="1" stop-color="#2f2630"/></linearGradient></defs>
+<rect width="800" height="1000" fill="url(#bg)"/><rect x="34" y="34" width="732" height="932" fill="none" stroke="#b89553" stroke-width="3"/>
+<g clip-path="inset(35px)"><rect x="70" y="120" width="660" height="760" rx="28" fill="url(#fabric)"/><path d="M120 140L650 780M70 260L570 860M220 80L710 650" stroke="#d4c3ca" stroke-opacity=".42" stroke-width="24"/></g>
+<text x="400" y="940" text-anchor="middle" font-family="Georgia,serif" font-size="22" letter-spacing="8" fill="#6b552d">FASTENO</text>
+</svg>
