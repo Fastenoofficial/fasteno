@@ -1,0 +1,20 @@
+# Never upload local credentials, provider metadata, caches, or dependencies.
+.env
+.env.*
+!.env.example
+.vercel
+.next
+node_modules
+*.tsbuildinfo
+
+# IDE/agent worktrees and local evidence are not runtime inputs.
+.claude
+semantic-review
+*.log
+FINAL_IMPLEMENTATION_REPORT.md
+PRODUCTION_CUTOVER_PLAN.md
+SECURITY_DEPLOYMENT.md
+
+# Database migrations are applied through the controlled Supabase runbook,
+# never by a Vercel build or runtime deployment.
+supabase
