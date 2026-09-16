@@ -9,6 +9,7 @@ node_modules
 
 # IDE/agent worktrees and local evidence are not runtime inputs.
 .claude
+.release-*
 semantic-review
 *.log
 FINAL_IMPLEMENTATION_REPORT.md
