@@ -504,7 +504,7 @@ export async function sendOrderEmail(
     const { Resend } = await import("resend");
     const resend = new Resend(apiKey);
     const from =
-      process.env.EMAIL_FROM ?? "Fasteno Shyama <orders@fasteno.in>";
+      process.env.EMAIL_FROM ?? "Fasteno <orders@fasteno.in>";
 
     const { subject, html, text } =
       kind === "confirmation"
@@ -546,7 +546,7 @@ export async function sendOwnerOrderAlert(order: EmailOrder): Promise<void> {
     const { Resend } = await import("resend");
     const resend = new Resend(apiKey);
     const from =
-      process.env.EMAIL_FROM ?? "Fasteno Shyama <orders@fasteno.in>";
+      process.env.EMAIL_FROM ?? "Fasteno <orders@fasteno.in>";
 
     const { subject, html, text } = ownerAlertEmail(order);
     const { error } = await resend.emails.send({

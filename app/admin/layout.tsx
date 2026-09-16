@@ -9,7 +9,7 @@ import { DemoNotice } from "@/components/account/DemoNotice";
 export const metadata: Metadata = {
   title: {
     default: "Admin",
-    template: "%s · Admin | Fasteno Shyama",
+    template: "%s · Admin | Fasteno",
   },
   robots: { index: false, follow: false },
 };

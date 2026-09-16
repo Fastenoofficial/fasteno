@@ -10,7 +10,7 @@ import { getSupabaseOrder } from "@/lib/orders";
 
 export const metadata: Metadata = {
   title: "Invoice",
-  description: "Printable GST invoice for your Fasteno Shyama order.",
+  description: "Printable GST invoice for your Fasteno order.",
   robots: { index: false, follow: false },
 };
 

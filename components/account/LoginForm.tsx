@@ -105,7 +105,7 @@ export function LoginForm({ next }: { next: string }) {
           {submitting ? "Signing in…" : "Sign In"}
         </Button>
         <p className="text-center text-sm text-muted">
-          New to Fasteno Shyama?{" "}
+          New to Fasteno?{" "}
           <Link
             href="/register"
             className="text-gold transition-colors hover:text-gold-light"

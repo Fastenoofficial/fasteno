@@ -12,7 +12,7 @@ import { SearchAutocomplete } from "@/components/search/SearchAutocomplete";
 export const metadata: Metadata = {
   title: "Search",
   description:
-    "Search the Fasteno Shyama collection — ties, cufflinks, brooches, pocket squares, buttons and gift sets.",
+    "Search the Fasteno collection — ties, cufflinks, brooches, pocket squares, buttons and gift sets.",
 };
 
 export default async function SearchPage({

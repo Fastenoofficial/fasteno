@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Fasteno Shyama — schema + RLS
+-- Fasteno — schema + RLS
 -- Run this in the Supabase SQL Editor (or `supabase db push`).
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -211,7 +211,7 @@ create policy "wishlists_owner_all" on public.wishlists
 --     select id from auth.users where email = 'you@example.com');
 -- ═══════════════════════════════════════════════════════════════════
 -- ═══════════════════════════════════════════════════════════════════
--- Fasteno Shyama — seed data (run AFTER 001_schema.sql)
+-- Fasteno — seed data (run AFTER 001_schema.sql)
 -- Mirrors lib/seed-data.ts. Idempotent: safe to re-run.
 -- ═══════════════════════════════════════════════════════════════════
 

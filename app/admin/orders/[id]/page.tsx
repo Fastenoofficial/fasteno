@@ -177,7 +177,7 @@ export default async function AdminOrderDetailPage({
             </p>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
               <a
-                href={`mailto:${order.email}?subject=${encodeURIComponent(`Your order ${order.orderNumber} — Fasteno Shyama`)}`}
+                href={`mailto:${order.email}?subject=${encodeURIComponent(`Your order ${order.orderNumber} — Fasteno`)}`}
                 className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs uppercase tracking-[0.05em] text-muted transition-colors hover:border-gold-light hover:text-ivory"
               >
                 <Mail size={12} />
@@ -185,7 +185,7 @@ export default async function AdminOrderDetailPage({
               </a>
               {order.phone && (
                 <a
-                  href={`https://wa.me/91${order.phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(`Hello! Regarding your Fasteno Shyama order ${order.orderNumber}: `)}`}
+                  href={`https://wa.me/91${order.phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(`Hello! Regarding your Fasteno order ${order.orderNumber}: `)}`}
                   target="_blank"
                   rel="noopener"
                   className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs uppercase tracking-[0.05em] text-muted transition-colors hover:border-gold-light hover:text-ivory"

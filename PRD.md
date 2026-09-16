@@ -1,4 +1,4 @@
-# PRD — Fasteno Shyama
+# PRD — Fasteno
 
 **Premium men's formal accessories e-commerce store**
 Version 1.0 · 16 July 2026 · Status: Approved for build
@@ -7,7 +7,7 @@ Version 1.0 · 16 July 2026 · Status: Approved for build
 
 ## 1. Overview
 
-Fasteno Shyama is a direct-to-consumer e-commerce store selling premium men's formal accessories in India:
+Fasteno is a direct-to-consumer e-commerce store selling premium men's formal accessories in India:
 
 | Category | Examples |
 |---|---|

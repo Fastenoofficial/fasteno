@@ -12,13 +12,13 @@ Last updated: 2026-07-16 · Session: feature build + integration complete (Claud
 
 ## 1. Project summary
 
-**Fasteno Shyama** — premium men's formal-accessories e-commerce store for
+**Fasteno** — premium men's formal-accessories e-commerce store for
 India (ties, cufflinks, brooches, pocket squares, buttons, gift sets).
 
 ### Locked user decisions — NEVER change these without asking the user
 | Decision | Value |
 |---|---|
-| Brand / store name | **Fasteno Shyama** |
+| Brand / store name | **Fasteno** |
 | Market / currency | **India, INR (₹)** — prices stored as integer **paise** |
 | Payments | **Razorpay** (UPI/cards/netbanking/wallets) + Cash on Delivery |
 | Design aesthetic | **Dark luxury** — charcoal `#0F0F11` bg, gold `#C6A75E` accent, ivory `#F4EFE6` text, Playfair Display headlines + Inter body |

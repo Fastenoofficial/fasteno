@@ -44,7 +44,7 @@ export function Navbar() {
         <Link href="/" className="flex items-center rounded-md">
           <img
             src="/branding/fasteno-logo.png"
-            alt="Fasteno.in - Exclusive Accessories"
+            alt="Fasteno - Exclusive Accessories"
             className="h-10 w-auto brightness-0 invert sm:h-12"
           />
         </Link>

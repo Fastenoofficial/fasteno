@@ -383,7 +383,7 @@ function giftSet(items, colors, accent) {
   <rect x="170" y="230" width="460" height="540" rx="6" fill="#1D1D22" stroke="${GOLD}" stroke-opacity="0.75" stroke-width="2.5"/>
   <rect x="188" y="248" width="424" height="504" rx="4" fill="none" stroke="${GOLD}" stroke-opacity="0.3" stroke-width="1.5"/>
   <path d="M170 320 L630 320" stroke="${GOLD}" stroke-opacity="0.5" stroke-width="1.5"/>
-  <text x="400" y="296" font-family="Georgia, serif" font-size="26" letter-spacing="6" fill="${GOLD}" text-anchor="middle">FASTENO SHYAMA</text>
+  <text x="400" y="296" font-family="Georgia, serif" font-size="26" letter-spacing="6" fill="${GOLD}" text-anchor="middle">FASTENO</text>
   <g transform="translate(400 540)">${items.map((i) => icons[i]).join("")}</g>
 </g>` +
     svgClose

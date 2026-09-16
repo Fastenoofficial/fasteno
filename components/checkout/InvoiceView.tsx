@@ -99,7 +99,7 @@ export function InvoiceView({ data }: { data: InvoiceData }) {
                 color: GOLD,
               }}
             >
-              FASTENO SHYAMA
+              FASTENO
             </div>
             <div
               style={{

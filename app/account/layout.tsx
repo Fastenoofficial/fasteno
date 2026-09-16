@@ -6,7 +6,7 @@ import { AccountNav } from "@/components/account/AccountNav";
 export const metadata: Metadata = {
   title: {
     default: "My Account",
-    template: "%s | Fasteno Shyama",
+    template: "%s | Fasteno",
   },
 };
 

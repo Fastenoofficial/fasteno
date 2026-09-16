@@ -8,7 +8,7 @@ import { ResetPasswordForm } from "./ResetPasswordForm";
 
 export const metadata: Metadata = {
   title: "Reset Password",
-  description: "Choose a new password for your Fasteno Shyama account.",
+  description: "Choose a new password for your Fasteno account.",
 };
 
 /** The recovery email links to /auth/callback?next=/reset-password, which

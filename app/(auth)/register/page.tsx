@@ -8,7 +8,7 @@ import { RegisterForm } from "@/components/account/RegisterForm";
 export const metadata: Metadata = {
   title: "Create Account",
   description:
-    "Create a Fasteno Shyama account for faster checkout, order tracking and a saved wishlist.",
+    "Create a Fasteno account for faster checkout, order tracking and a saved wishlist.",
 };
 
 export default async function RegisterPage() {

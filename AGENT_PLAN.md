@@ -1,4 +1,4 @@
-# Agentic Build Plan — Fasteno Shyama
+# Agentic Build Plan — Fasteno
 
 How the site gets built in one go: a **foundation phase** (lead agent) followed by **4 parallel sub-agents** with strict, non-overlapping file ownership, then an **integration phase** (lead agent). Parallel agents never edit shared files — they only consume contracts the foundation defines.
 

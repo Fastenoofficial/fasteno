@@ -8,7 +8,7 @@ import { ProfileForm } from "@/components/account/ProfileForm";
 
 export const metadata: Metadata = {
   title: "Profile",
-  description: "Manage your Fasteno Shyama profile.",
+  description: "Manage your Fasteno profile.",
 };
 
 export default async function AccountPage() {

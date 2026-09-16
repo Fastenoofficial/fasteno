@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { WHATSAPP_NUMBER } from "@/lib/config";
 
 const WA_HREF = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
-  "Hi Fasteno Shyama!",
+  "Hi Fasteno!",
 )}`;
 
 /** Floating WhatsApp chat button — bottom-right, charcoal bubble with gold glyph.

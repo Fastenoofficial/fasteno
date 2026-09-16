@@ -72,8 +72,8 @@ export async function openRazorpayCheckout(
       order_id: config.orderId,
       amount: config.amount,
       currency: config.currency,
-      name: "Fasteno Shyama",
-      description: "Fasteno Shyama order",
+      name: "Fasteno",
+      description: "Fasteno order",
       prefill: {
         name: config.name,
         email: config.email,

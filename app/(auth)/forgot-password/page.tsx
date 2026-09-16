@@ -8,7 +8,7 @@ import { ForgotPasswordForm } from "./ForgotPasswordForm";
 
 export const metadata: Metadata = {
   title: "Forgot Password",
-  description: "Reset your Fasteno Shyama account password.",
+  description: "Reset your Fasteno account password.",
 };
 
 export default async function ForgotPasswordPage() {

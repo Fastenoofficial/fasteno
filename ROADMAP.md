@@ -1,4 +1,4 @@
-# Fasteno Shyama — Competitive Gap Analysis & Feature Roadmap
+# Fasteno — Competitive Gap Analysis & Feature Roadmap
 
 > Produced 2026-07-17 from a 7-agent web research sweep: premium international
 > brands (Drake's, The Tie Bar, OTAA, The Dark Knot, Cufflinks.com, Suitsupply,

@@ -23,7 +23,7 @@ const pillars = [
   },
 ];
 
-/** Brand-story band — the craftsmanship promise behind Fasteno Shyama. */
+/** Brand-story band — the craftsmanship promise behind Fasteno. */
 export function CraftsmanshipBand() {
   return (
     <section className="on-dark relative overflow-hidden border-y border-white/10 bg-block text-block-text">
@@ -35,7 +35,7 @@ export function CraftsmanshipBand() {
         <div className="grid gap-12 lg:grid-cols-[2fr_3fr] lg:gap-16">
           {/* story */}
           <div>
-            <p className="eyebrow mb-3">The Fasteno Shyama standard</p>
+            <p className="eyebrow mb-3">The Fasteno standard</p>
             <h2 className="font-display text-3xl font-semibold leading-snug tracking-[-0.035em] text-block-text md:text-4xl">
               Small things, taken seriously.
             </h2>

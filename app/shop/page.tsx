@@ -8,7 +8,7 @@ import ShopClient from "./shop-client";
 export const metadata: Metadata = {
   title: "Shop All Accessories",
   description:
-    "Browse the full Fasteno Shyama collection — silk ties, cufflinks, brooches, pocket squares, buttons and gift sets. Filter by colour, material, pattern, price and occasion.",
+    "Browse the full Fasteno collection — silk ties, cufflinks, brooches, pocket squares, buttons and gift sets. Filter by colour, material, pattern, price and occasion.",
 };
 
 // Force static rendering with ISR

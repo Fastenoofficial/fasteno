@@ -8,7 +8,7 @@ import { LoginForm } from "@/components/account/LoginForm";
 export const metadata: Metadata = {
   title: "Sign In",
   description:
-    "Sign in to your Fasteno Shyama account to view orders, addresses and your wishlist.",
+    "Sign in to your Fasteno account to view orders, addresses and your wishlist.",
 };
 
 export default async function LoginPage({

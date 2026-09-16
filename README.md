@@ -1,4 +1,4 @@
-# Fasteno Shyama
+# Fasteno
 
 Premium men's formal accessories — ties, cufflinks, brooches, pocket squares,
 buttons and gift sets — built for the Indian market (INR, Razorpay, Cash on

@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Fasteno Shyama — optional sample catalog data
+-- Fasteno — optional sample catalog data
 -- Run only AFTER the complete canonical migration chain (currently 001–010).
 -- Mirrors lib/seed-data.ts. Idempotent and ordering-safe when re-run.
 -- ═══════════════════════════════════════════════════════════════════

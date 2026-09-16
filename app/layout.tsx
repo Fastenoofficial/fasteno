@@ -24,12 +24,12 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `Fasteno.in — Exclusive Accessories | Premium Ties, Cufflinks & More`,
-    template: `%s | Fasteno.in`,
+    default: `${SITE_NAME} — Exclusive Accessories | Premium Ties, Cufflinks & More`,
+    template: `%s | ${SITE_NAME}`,
   },
   description: `Exclusive Accessories. Shop premium men's formal accessories — silk ties, cufflinks, brooches, pocket squares and buttons. Free shipping over ₹1,499 across India.`,
   openGraph: {
-    siteName: "Fasteno.in - Exclusive Accessories",
+    siteName: `${SITE_NAME} - Exclusive Accessories`,
     type: "website",
     locale: "en_IN",
   },

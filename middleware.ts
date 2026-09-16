@@ -143,7 +143,7 @@ function maintenanceResponse(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
-  <title>Scheduled maintenance | Fasteno.in</title>
+  <title>Scheduled maintenance | Fasteno</title>
   <style>
     :root { color-scheme: dark; font-family: Georgia, "Times New Roman", serif; background: #171512; color: #f8f2e8; }
     * { box-sizing: border-box; }
@@ -164,7 +164,7 @@ function maintenanceResponse(
 </head>
 <body>
   <main>
-    <p class="eyebrow">Fasteno.in</p>
+    <p class="eyebrow">Fasteno</p>
     <h1>We&rsquo;ll be right back.</h1>
     <p>We&rsquo;re completing scheduled improvements. Please try again in a few minutes.</p>
     ${form}

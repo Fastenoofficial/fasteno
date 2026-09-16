@@ -13,7 +13,7 @@ import { getSupabaseOrder } from "@/lib/orders";
 
 export const metadata: Metadata = {
   title: "Order Confirmation",
-  description: "Your Fasteno Shyama order details.",
+  description: "Your Fasteno order details.",
   robots: { index: false },
 };
 

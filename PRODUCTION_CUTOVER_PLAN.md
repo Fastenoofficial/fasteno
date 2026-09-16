@@ -12,10 +12,7 @@ Replace the website at `https://fasteno.in` with the validated Next.js 15.5.25 r
 - DNS uses `ns1.vercel-dns.com` and `ns2.vercel-dns.com`.
 - Vercel CLI is authenticated as `fastenoofficial-8636`, active team `Fasteno`.
 - That team reports zero owned domains and cannot inspect `fasteno.in`; the domain belongs to another Vercel context/account.
-- Team projects:
-  - `fasteno-shyama`: valid Next.js project; possible fallback destination.
-  - `fasteno.in`: framework preset `Other`, middleware-only output, default URL HTTP 500; never use it.
-  - `fasteno`: older Next.js project; do not select it without live ownership evidence.
+- Legacy team projects include one correctly configured pre-rebrand Next.js project, one broken framework preset, and one older project. They are historical references only; the new-account launch must use a project named `fasteno`.
 - Local `main` is 13 commits ahead of `origin/main` plus a large validated, uncommitted tree. The tested source has no immutable release SHA yet.
 - The configured Supabase database was observed missing migration 007’s `site_banners.product_1_id`; the complete live schema/ACL state is unknown.
 - Supabase CLI, hosted Supabase tools, and a usable local PostgreSQL/Docker runtime are unavailable.
@@ -26,9 +23,9 @@ Replace the website at `https://fasteno.in` with the validated Next.js 15.5.25 r
 
 After access is restored, identify the project currently serving `fasteno.in`. If it can be configured for this Next.js release, deploy within that project. Vercel can promote the new deployment while retaining domain/DNS ownership, which is safer than detaching the domain.
 
-### Fallback — `Fasteno/fasteno-shyama`
+### New-account destination — `fasteno`
 
-Use this correctly configured project only if the existing project cannot be retained. A fallback requires a Vercel-confirmed cross-context transfer/reassignment. Never remove the source domain before destination claimability, protection, and rollback are rehearsed.
+Create and use a correctly configured Next.js project named `fasteno` in the newly authenticated Vercel account. A domain cutover requires a Vercel-confirmed transfer/reassignment or registrar DNS control. Never remove the source domain before destination claimability, protection, and rollback are rehearsed.
 
 ## Mandatory immutable release
 
@@ -350,7 +347,7 @@ Maintenance stays active through traffic movement, all migrations, read-only che
 ### Switch while protected
 
 - Existing-project path: promote the exact candidate within the same project.
-- Fallback path: perform only the rehearsed Vercel-confirmed atomic domain transfer/reassignment to `Fasteno/fasteno-shyama`; configure destination protection before detaching source. Remove-then-add is allowed only with confirmed immediate claimability and tested rollback.
+- New-account path: perform only the rehearsed Vercel-confirmed atomic domain transfer/reassignment to the validated `fasteno` project; configure destination protection before detaching source. Remove-then-add is allowed only with confirmed immediate claimability and tested rollback.
 
 Verify the custom domain serves the new SHA/fingerprint through an authorized operator path while anonymous traffic remains blocked.
 

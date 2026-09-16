@@ -14,7 +14,7 @@ import { OrderStatusBadge } from "@/components/account/OrderStatusBadge";
 
 export const metadata: Metadata = {
   title: "Order History",
-  description: "Track your Fasteno Shyama orders.",
+  description: "Track your Fasteno orders.",
 };
 
 interface TrackingExtras {

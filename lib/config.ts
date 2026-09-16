@@ -1,6 +1,6 @@
 /** Site-wide configuration and live/demo mode detection. */
 
-export const SITE_NAME = "Fasteno.in";
+export const SITE_NAME = "Fasteno";
 export const SITE_TAGLINE = "Exclusive Accessories";
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -56,7 +56,7 @@ export const WHATSAPP_NUMBER = "917878438958";
 
 /** ── Legal / compliance (Consumer Protection E-Commerce Rules 2020) ──
  *  Registered details per GST certificate (Form GST REG-06, GSTIN below).
- *  "Fasteno Shyama" is the brand; SR Creation is the registered entity. */
+ *  Fasteno is the brand; SR Creation is the registered entity. */
 export const LEGAL_ENTITY_NAME = "SR Creation (Proprietor: Sandeep Agarwal)";
 export const LEGAL_ADDRESS =
   "Shop No. 02, 1st Floor, 2772, Karodiya Bhawan, Poorviyo Ka Chowk, Khajane Walon Ka Rasta, Chandpol Bazar, Jaipur, Rajasthan — 302001";
@@ -64,7 +64,7 @@ export const GSTIN = "08CVGPA9527D1ZO";
 /** Seller's GST state — decides CGST+SGST (intra-state) vs IGST on invoices. */
 export const SELLER_STATE = "Rajasthan";
 export const GRIEVANCE_OFFICER = {
-  name: "Grievance Officer — Fasteno Shyama",
+  name: "Grievance Officer — Fasteno",
   email: SUPPORT_EMAIL,
   phone: SUPPORT_PHONE,
   /** Statutory SLA under the E-Commerce Rules 2020 */

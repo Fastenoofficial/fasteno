@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Facebook, Instagram, Twitter, Youtube } from "lucide-react";
 import {
   GRIEVANCE_OFFICER,
   GSTIN,
@@ -35,29 +34,6 @@ const companyLinks = [
   { href: "/terms", label: "Terms of Service" },
 ];
 
-const socialLinks = [
-  {
-    href: "https://instagram.com/fastenoshyama",
-    label: "Instagram",
-    Icon: Instagram,
-  },
-  {
-    href: "https://facebook.com/fastenoshyama",
-    label: "Facebook",
-    Icon: Facebook,
-  },
-  {
-    href: "https://x.com/fastenoshyama",
-    label: "X (Twitter)",
-    Icon: Twitter,
-  },
-  {
-    href: "https://youtube.com/@fastenoshyama",
-    label: "YouTube",
-    Icon: Youtube,
-  },
-];
-
 export function Footer() {
   return (
     <footer className="relative overflow-hidden bg-block text-block-text">
@@ -70,7 +46,7 @@ export function Footer() {
         <div>
           <img
             src="/branding/fasteno-logo.png"
-            alt="Fasteno.in"
+            alt="Fasteno"
             className="mb-4 h-10 w-auto brightness-0 invert"
           />
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-block-text/62">
@@ -82,21 +58,6 @@ export function Footer() {
             <br />
             {SUPPORT_PHONE}
           </p>
-          <ul className="mt-6 flex items-center gap-2">
-            {socialLinks.map(({ href, label, Icon }) => (
-              <li key={label}>
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={label}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-block-text/65 transition-colors hover:border-gold-light/40 hover:bg-white/10 hover:text-gold-light"
-                >
-                  <Icon size={16} aria-hidden />
-                </a>
-              </li>
-            ))}
-          </ul>
         </div>
 
         {/* link columns */}
