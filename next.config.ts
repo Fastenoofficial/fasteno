@@ -76,6 +76,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
+  // Keep standalone/serverless traces rooted in the deployment checkout. This
+  // avoids monorepo-style parent lockfile inference when the release is built
+  // from an isolated Git worktree and keeps Vercel route manifests complete.
+  outputFileTracingRoot: process.cwd(),
   poweredByHeader: false,
   async redirects() {
     // Canonical host: www serves the same deployment on Vercel, so collapse
