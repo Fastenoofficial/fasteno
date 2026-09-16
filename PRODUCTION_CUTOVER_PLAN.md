@@ -324,19 +324,22 @@ Enable project-wide Deployment Protection or equivalent firewall/application mai
 
 ### Required webhook/operator path
 
-Before go-live approval, rehearse one of these designs:
+The application maintenance gate is implemented and validated in `middleware.ts`:
 
-1. **Route-scoped provider/firewall exception:** keep deny-all maintenance, narrowly allow only signed POST requests to the new `/api/razorpay/webhook`, and create a separate time-limited operator allowlist/bypass for controlled checkout/verify/admin tests; or
-2. **Application maintenance gate:** add a reviewed environment-controlled gate that blocks customer/admin writers across every hostname, permits only HMAC-valid Razorpay webhooks plus explicit operator test access, then create a new release SHA and repeat all validation.
+- set `MAINTENANCE_MODE=1` and a fresh 64-hex `MAINTENANCE_BYPASS_SECRET` in every production-credentialed deployment, then redeploy the pinned release SHA;
+- operator access uses a same-origin POST and receives a host-bound, signed, server-expiring 15-minute HttpOnly cookie; it does not bypass Supabase authentication or admin authorization;
+- keep `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK` unset/`0` while migration 006 is missing and throughout migrations 006–010, so callbacks receive retryable 503 rather than reaching missing RPCs or schema locks;
+- after 010 passes, set `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK=1`, redeploy while general maintenance remains active, reconcile the recorded Razorpay interval, and verify signed callback/replay behavior;
+- normal operation ignores the passthrough flag, but unset it and rotate/remove the bypass secret after reopening.
 
-Do not place a Vercel bypass secret in a public URL or report. If neither design can be securely implemented and anonymously verified, stop. A real Razorpay callback cannot be assumed to carry a browser’s Vercel bypass cookie.
+Do not place a bypass secret in a URL or report. Rehearse unlock, expiry, Origin, host binding, no-store/CSP, exact webhook method/path/query/signature-shape admission, and raw-body HMAC behavior on the immutable deployment. Provider protection is still required for old production-credentialed deployments that do not contain this gate.
 
 ### Enter maintenance
 
 1. Activate verified protection/gate on all source and candidate hostnames.
 2. Stop admin/catalog/order activity and drain in-flight requests.
 3. Disable source cron schedules/authorization; keep destination cron unauthorized.
-4. Pause new Razorpay checkout initiation while retaining the rehearsed signed-webhook path. Record the pause timestamp and reconcile provider events before reopening; do not assume automatic replay.
+4. Pause new Razorpay checkout initiation and keep `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK=0` through migrations 006–010. Record the pause timestamp and reconcile provider events before reopening; do not assume automatic replay.
 5. Pause Shiprocket/auto-ship and other order/newsletter/guest writers.
 6. Re-run anonymous negative probes on every hostname.
 
@@ -353,23 +356,26 @@ Verify the custom domain serves the new SHA/fingerprint through an authorized op
 
 ### Branch A — migration 006 exactly complete
 
-1. Migration 007 may be applied earlier because it is additive; verify it.
-2. With new app selected and maintenance active, apply migration 008.
-3. Apply migration 009.
-4. Re-run duplicate counts.
-5. Apply migration 010.
+1. Keep `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK=0` so callbacks cannot cross later schema locks.
+2. Migration 007 may be applied earlier because it is additive; verify it.
+3. With new app selected and maintenance active, apply migration 008.
+4. Apply migration 009.
+5. Re-run duplicate counts.
+6. Apply migration 010.
+7. Enable and verify the signed webhook lane in a new gated deployment before reopening checkout.
 
 Migrations 008/009 are not declared compatible with the unknown old admin app; admin/catalog writes remain frozen until the matching app and schema pass verification.
 
 ### Branch B — migration 006 missing or partial
 
-1. Keep all traffic/writers blocked on the new candidate.
-2. Review every mismatch and confirm rerunning/fixing migration 006 is a safe forward convergence.
+1. Keep all traffic/writers blocked on the new candidate with `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK=0`.
+2. Record the callback-pause timestamp, review every mismatch, and confirm rerunning/fixing migration 006 is a safe forward convergence.
 3. Apply/re-run migration 006.
 4. Verify exact definitions/ACLs plus direct negative probes.
 5. Apply migrations 007, 008, 009, and 010 in order without reopening between them.
+6. After 010 passes, enable the signed webhook lane in a new gated deployment, reconcile Razorpay events from the pause interval, and verify callback/replay behavior before checkout is reopened.
 
-The new app may consume 006 objects before step 3; maintenance prevents requests from reaching that transient state.
+The new app may consume 006 objects before step 3; maintenance prevents requests from reaching that transient state. Keeping the webhook lane closed prevents authentic callbacks from reaching absent RPCs or waiting across migration locks.
 
 ### Migration-010 acceptance
 

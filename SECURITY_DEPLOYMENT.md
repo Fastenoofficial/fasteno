@@ -94,3 +94,19 @@ Use a non-production rehearsal and a production maintenance window:
 Migration 010 supersedes migration 005's historical privilege wording: Shiprocket synchronization writes through the service client in the application, while authenticated order table updates remain restricted to administrators by RLS for manual status/tracking workflows. It does not revoke those required admin order updates.
 
 Do not apply migration 010 to live Supabase from a development session. Its Razorpay preflight and all ACL behavior must be verified against a backup/rehearsal first.
+
+## 10. Application maintenance gate
+
+Use the built-in gate for coordinated application/schema releases; do not simulate maintenance by deleting credentials or weakening database grants.
+
+- `MAINTENANCE_MODE=1` blocks ordinary pages, static assets, APIs, Server Actions, auth callbacks, admin actions, and cron routes in middleware before application or database code. Unset it or set `0` for normal operation.
+- Generate a fresh `MAINTENANCE_BYPASS_SECRET` for every window: exactly 32 random bytes encoded as 64 hexadecimal characters. A missing/malformed secret keeps maintenance active with no operator unlock. Never reuse or expose it in URLs, logs, reports, screenshots, or browser JavaScript.
+- Operators unlock with the same-origin POST form on the maintenance page. The raw secret is not stored: the response sets a Secure, HttpOnly, SameSite=Strict, host-only `__Host-fasteno-maintenance` cookie containing a signed issuance time. Both browser and server reject it after 15 minutes; each hostname must be unlocked separately.
+- `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK` is ignored during normal operation. While maintenance is active it must remain unset/`0` until migration 006 and all schema-locking payment work are complete. In that state webhook requests receive 503 and must be reconciled against Razorpay after the window; do not assume every provider delivery will replay automatically.
+- After migrations 006–010 pass, set `MAINTENANCE_ALLOW_RAZORPAY_WEBHOOK=1` and redeploy while customer traffic remains blocked. Only exact no-query POST requests with a configured webhook secret and a 64-hex signature shape reach the webhook route; the route still performs the authoritative bounded raw-body HMAC before any demo or persistence behavior. Test one signed callback/replay before reopening checkout.
+- If callbacks must continue during a longer post-006 phase, explicitly disable `SHIPROCKET_AUTO_SHIP`, keep cron/admin/customer writes blocked, avoid migration-010 lock windows, monitor non-2xx responses, and reconcile the recorded interval.
+- Environment changes require a new Vercel deployment. Pin and verify every gated/ungated deployment ID and release SHA. Do not remove maintenance from the public domain until the disabled-mode deployment is verified.
+
+Before applying migrations, inventory every production-credentialed custom domain, project alias, immutable deployment URL, and preview URL. From an anonymous client, confirm all return the 503 maintenance response for pages, assets, checkout, newsletter, browser verification, upload, auth, admin, and cron paths. Confirm restrictive CSP, `noindex`, and private/CDN `no-store` headers. A gate in the new release cannot protect an older deployment URL, so use provider protection or remove production credentials from that old path.
+
+For operator validation, confirm wrong/missing/cross-origin secrets are denied; copied, expired, future-dated, and cross-host cookies fail; a valid cookie still encounters ordinary Supabase authentication and admin authorization; and bypassed responses remain no-store. Rotate/remove the bypass secret after the window. Do not use `Clear-Site-Data`, which would unnecessarily destroy customer sessions.

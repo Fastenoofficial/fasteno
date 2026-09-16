@@ -6,12 +6,22 @@ import { verifyRazorpayWebhookSignature } from "@/lib/razorpay";
 import { readBoundedBytes } from "@/lib/request-body";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 interface RazorpayEvent {
   event?: unknown;
   payload?: {
     payment?: { entity?: Record<string, unknown> };
   };
+}
+
+function webhookJson(
+  body: Record<string, unknown>,
+  init?: ResponseInit,
+): NextResponse {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 
 /** Verified Razorpay callback. HMAC always covers the exact received bytes. */
@@ -22,20 +32,21 @@ export async function POST(request: Request) {
     contentTypeError: "Expected application/json.",
   });
   if (!body.ok) {
-    return NextResponse.json({ error: body.error }, { status: body.status });
+    return webhookJson({ error: body.error }, { status: body.status });
   }
 
-  if (isDemoMode) {
-    return NextResponse.json({ ok: true, skipped: "demo-mode" });
-  }
   if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
     console.error("webhook: RAZORPAY_WEBHOOK_SECRET is not set — rejecting.");
-    return NextResponse.json({ error: "Webhook not configured." }, { status: 503 });
+    return webhookJson({ error: "Webhook not configured." }, { status: 503 });
   }
 
   const signature = request.headers.get("x-razorpay-signature")?.trim() ?? "";
   if (!verifyRazorpayWebhookSignature(body.value, signature)) {
-    return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
+    return webhookJson({ error: "Invalid signature." }, { status: 400 });
+  }
+
+  if (isDemoMode) {
+    return webhookJson({ ok: true, skipped: "demo-mode" });
   }
 
   let event: RazorpayEvent;
@@ -43,7 +54,7 @@ export async function POST(request: Request) {
     const rawText = new TextDecoder("utf-8", { fatal: true }).decode(body.value);
     event = JSON.parse(rawText) as RazorpayEvent;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return webhookJson({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const eventName = typeof event.event === "string" ? event.event : "";
@@ -56,7 +67,7 @@ export async function POST(request: Request) {
 
   if (eventName === "payment.captured") {
     if (!validOrderId || !/^pay_[A-Za-z0-9]{6,40}$/.test(razorpayPaymentId)) {
-      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
+      return webhookJson({ error: "Invalid payment event." }, { status: 400 });
     }
     const capturedAmount =
       typeof payment.amount === "number" &&
@@ -65,7 +76,7 @@ export async function POST(request: Request) {
         ? payment.amount
         : undefined;
     if (capturedAmount === undefined) {
-      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
+      return webhookJson({ error: "Invalid payment event." }, { status: 400 });
     }
 
     const { persisted, alreadyPaid, order, reason } = await markOrderPaid(
@@ -84,7 +95,7 @@ export async function POST(request: Request) {
         reason === "items_missing" ||
         reason === "out_of_stock";
       if (!permanent) {
-        return NextResponse.json(
+        return webhookJson(
           { error: "Order update failed — please retry." },
           { status: 500 },
         );
@@ -97,17 +108,17 @@ export async function POST(request: Request) {
     }
   } else if (eventName === "payment.failed") {
     if (!validOrderId) {
-      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
+      return webhookJson({ error: "Invalid payment event." }, { status: 400 });
     }
     const failed = await markOrderPaymentFailed(razorpayOrderId);
     if (!failed.handled) {
       console.error(`webhook: payment.failed not persisted (${failed.reason ?? "unknown"}).`);
-      return NextResponse.json(
+      return webhookJson(
         { error: "Order update failed — please retry." },
         { status: 500 },
       );
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return webhookJson({ ok: true });
 }

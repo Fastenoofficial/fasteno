@@ -81,18 +81,6 @@ const nextConfig: NextConfig = {
   // from an isolated Git worktree and keeps Vercel route manifests complete.
   outputFileTracingRoot: process.cwd(),
   poweredByHeader: false,
-  async redirects() {
-    // Canonical host: www serves the same deployment on Vercel, so collapse
-    // it to the apex for SEO before any page renders.
-    return [
-      {
-        source: "/:path*",
-        has: [{ type: "host", value: "www.fasteno.in" }],
-        destination: "https://fasteno.in/:path*",
-        permanent: true,
-      },
-    ];
-  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
