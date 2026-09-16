@@ -15,14 +15,14 @@ const items = [
 /** Slim reassurance strip shown under the navbar site-wide. */
 export function TrustBar() {
   return (
-    <div className="border-b border-line bg-block text-block-text">
-      <div className="mx-auto flex max-w-7xl items-center justify-start gap-8 overflow-x-auto px-4 py-2.5 sm:px-6 md:justify-center">
+    <div className="border-b border-white/10 bg-block-soft text-block-text">
+      <div className="no-scrollbar mx-auto flex max-w-[90rem] items-center justify-start gap-8 overflow-x-auto px-4 py-2.5 sm:px-6 md:justify-center lg:px-8">
         {items.map(({ icon: Icon, text }) => (
           <span
             key={text}
-            className="flex shrink-0 items-center gap-2 text-[11px] tracking-wide text-block-text/85"
+            className="flex shrink-0 items-center gap-2 text-[11px] tracking-wide text-block-text/72"
           >
-            <Icon size={13} className="text-gold-light" />
+            <Icon size={13} className="text-gold-light" aria-hidden />
             {text}
           </span>
         ))}

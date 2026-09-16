@@ -18,7 +18,14 @@ import {
   isRazorpayServerConfigured,
   razorpayPublicKeyId,
 } from "@/lib/razorpay";
-import { clientIp, rateLimit, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
+import {
+  clientIp,
+  rateLimit,
+  rateLimitKey,
+  RATE_LIMIT_MESSAGE,
+  RATE_LIMIT_UNAVAILABLE_MESSAGE,
+} from "@/lib/rate-limit";
+import { readBoundedJson } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
@@ -37,28 +44,31 @@ export const runtime = "nodejs";
  *   429      → rate limited (10 req/min/IP)
  */
 export async function POST(request: Request) {
-  const limited = await rateLimit(`checkout:${clientIp(request)}`, {
+  const limited = await rateLimit(rateLimitKey("checkout", clientIp(request)), {
     limit: 10,
     windowMs: 60_000,
+    mode: "availability",
   });
   if (!limited.ok) {
+    const unavailable = limited.outcome === "unavailable";
     return NextResponse.json(
-      { error: RATE_LIMIT_MESSAGE },
+      { error: unavailable ? RATE_LIMIT_UNAVAILABLE_MESSAGE : RATE_LIMIT_MESSAGE },
       {
-        status: 429,
-        headers: { "Retry-After": String(Math.ceil(limited.retryAfterMs / 1000)) },
+        status: unavailable ? 503 : 429,
+        headers:
+          limited.outcome === "limited"
+            ? { "Retry-After": String(Math.ceil(limited.retryAfterMs / 1000)) }
+            : undefined,
       },
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  const body = await readBoundedJson(request, { maxBytes: 32 * 1024 });
+  if (!body.ok) {
+    return NextResponse.json({ error: body.error }, { status: body.status });
   }
 
-  const parsed = parseCheckoutPayload(body);
+  const parsed = parseCheckoutPayload(body.value);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
@@ -67,7 +77,7 @@ export async function POST(request: Request) {
   // Re-price every line from the catalog — client prices are never trusted.
   const priced = await priceCartLines(payload.items);
   if (!priced.ok) {
-    return NextResponse.json({ error: priced.error }, { status: 400 });
+    return NextResponse.json({ error: priced.error }, { status: 409 });
   }
   const { items } = priced;
   let totals = priced.totals;
@@ -121,16 +131,22 @@ export async function POST(request: Request) {
   // payment.failed. COD decrements and keeps it (order is confirmed).
   const stock = await decrementStock(items);
   if (!stock.ok) {
+    if (stock.reason === "out_of_stock") {
+      return NextResponse.json(
+        {
+          error: `"${stock.outOfStockName}" just went out of stock. Please remove it from your cart and try again.`,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
-      {
-        error: `"${stock.outOfStockName}" just went out of stock. Please remove it from your cart and try again.`,
-      },
-      { status: 409 },
+      { error: "Inventory reservation is temporarily unavailable. Please try again." },
+      { status: 503 },
     );
   }
-  /** Undo the reservation if we fail before an order exists. */
-  const releaseStock = () => {
-    if (stock.reserved) restoreStock(items).catch(() => {});
+  /** Undo the reservation before returning any pre-order failure. */
+  const releaseStock = async () => {
+    if (stock.reserved) await restoreStock(items);
   };
 
   // ── COD: persist immediately, payment collected on delivery ─────────
@@ -145,8 +161,11 @@ export async function POST(request: Request) {
       couponCode,
     });
     if (!result.ok) {
-      releaseStock();
-      return NextResponse.json({ error: result.error }, { status: 500 });
+      await releaseStock();
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.reason === "service_unavailable" ? 503 : 500 },
+      );
     }
     // AWAIT the side effects: on Vercel the function is frozen the moment the
     // response returns, so un-awaited promises are silently dropped — this was
@@ -157,14 +176,18 @@ export async function POST(request: Request) {
       sendOrderEmail(result.order, "confirmation"),
       sendOwnerOrderAlert(result.order),
     ]);
-    return NextResponse.json({ mode: "cod", order: result.order });
+    return NextResponse.json({
+      mode: "cod",
+      order: result.order,
+      guestCredential: result.guestCredential,
+    });
   }
 
   // ── Razorpay: gateway order first, then our order referencing it ────
   // (RLS only lets admins UPDATE orders, so razorpay_order_id must be
   //  present at INSERT time rather than patched on afterwards.)
   if (!isRazorpayServerConfigured()) {
-    releaseStock();
+    await releaseStock();
     return NextResponse.json(
       { error: "Online payment is not available right now. Please choose Cash on Delivery." },
       { status: 400 },
@@ -183,7 +206,7 @@ export async function POST(request: Request) {
     rzpOrderId = String(rzpOrder.id);
   } catch (err) {
     console.error("checkout: razorpay order creation failed —", err);
-    releaseStock();
+    await releaseStock();
     return NextResponse.json(
       { error: "Could not start the payment. Please try again or choose Cash on Delivery." },
       { status: 502 },
@@ -201,7 +224,7 @@ export async function POST(request: Request) {
     couponCode,
   });
   if (!result.ok) {
-    releaseStock();
+    await releaseStock();
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
   // Coupon usage for online orders is counted when the payment is CONFIRMED
@@ -212,6 +235,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     mode: "razorpay",
     order: result.order,
+    guestCredential: result.guestCredential,
     razorpay: {
       keyId: razorpayPublicKeyId(),
       orderId: rzpOrderId,

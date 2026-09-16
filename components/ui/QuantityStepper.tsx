@@ -8,6 +8,7 @@ interface QuantityStepperProps {
   min?: number;
   max?: number;
   size?: "sm" | "md";
+  label?: string;
 }
 
 export function QuantityStepper({
@@ -16,32 +17,42 @@ export function QuantityStepper({
   min = 1,
   max = 10,
   size = "md",
+  label = "Quantity",
 }: QuantityStepperProps) {
-  const btn =
-    size === "sm" ? "h-8 w-8" : "h-11 w-11";
-  const label = size === "sm" ? "w-8 text-sm" : "w-12 text-base";
+  const buttonSize = size === "sm" ? "h-8 w-8" : "h-11 w-11";
+  const valueSize = size === "sm" ? "w-8 text-sm" : "w-12 text-base";
+  const lowerLabel = label.charAt(0).toLowerCase() + label.slice(1);
+
   return (
-    <div className="inline-flex items-center border border-line">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex items-center rounded-full border border-line bg-card p-0.5 shadow-sm"
+    >
       <button
         type="button"
-        aria-label="Decrease quantity"
+        aria-label={`Decrease ${lowerLabel}`}
         disabled={value <= min}
         onClick={() => onChange(Math.max(min, value - 1))}
-        className={`${btn} inline-flex items-center justify-center text-muted transition-colors hover:text-gold disabled:opacity-30 cursor-pointer`}
+        className={`${buttonSize} inline-flex cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-gold disabled:pointer-events-none disabled:opacity-30`}
       >
-        <Minus size={14} />
+        <Minus size={14} aria-hidden />
       </button>
-      <span className={`${label} text-center font-medium text-ivory`}>
+      <output
+        aria-live="polite"
+        aria-atomic="true"
+        className={`${valueSize} text-center font-medium text-ivory`}
+      >
         {value}
-      </span>
+      </output>
       <button
         type="button"
-        aria-label="Increase quantity"
+        aria-label={`Increase ${lowerLabel}`}
         disabled={value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
-        className={`${btn} inline-flex items-center justify-center text-muted transition-colors hover:text-gold disabled:opacity-30 cursor-pointer`}
+        className={`${buttonSize} inline-flex cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-gold disabled:pointer-events-none disabled:opacity-30`}
       >
-        <Plus size={14} />
+        <Plus size={14} aria-hidden />
       </button>
     </div>
   );

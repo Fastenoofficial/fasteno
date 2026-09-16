@@ -4,6 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_EMAIL_PATTERN,
+  AUTH_NAME_MAX_LENGTH,
+  AUTH_NAME_MIN_LENGTH,
+  AUTH_NEW_PASSWORD_MAX_LENGTH,
+  AUTH_NEW_PASSWORD_MIN_LENGTH,
+  normalizeAuthEmail,
+} from "@/lib/auth-input";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { GoogleSignInButton } from "@/components/account/GoogleSignInButton";
@@ -24,21 +33,49 @@ export function RegisterForm() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const normalizedName = fullName.normalize("NFKC").trim();
+    const normalizedEmail = normalizeAuthEmail(email);
+    if (
+      normalizedName.length < AUTH_NAME_MIN_LENGTH ||
+      normalizedName.length > AUTH_NAME_MAX_LENGTH
+    ) {
+      setError(
+        `Full name must be ${AUTH_NAME_MIN_LENGTH}–${AUTH_NAME_MAX_LENGTH} characters.`,
+      );
+      return;
+    }
+    if (
+      normalizedEmail.length > AUTH_EMAIL_MAX_LENGTH ||
+      !AUTH_EMAIL_PATTERN.test(normalizedEmail)
+    ) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (password.length < AUTH_NEW_PASSWORD_MIN_LENGTH) {
+      setError(
+        `Password must be at least ${AUTH_NEW_PASSWORD_MIN_LENGTH} characters.`,
+      );
+      return;
+    }
+    if (password.length > AUTH_NEW_PASSWORD_MAX_LENGTH) {
+      setError(
+        `Password must be ${AUTH_NEW_PASSWORD_MAX_LENGTH} characters or fewer.`,
+      );
       return;
     }
     setSubmitting(true);
+    setFullName(normalizedName);
+    setEmail(normalizedEmail);
 
     const supabase = createClient();
     const { data, error: authError } = await supabase.auth.signUp({
-      email: email.trim(),
+      email: normalizedEmail,
       password,
-      options: { data: { full_name: fullName.trim() } },
+      options: { data: { full_name: normalizedName } },
     });
 
     if (authError) {
-      setError(authError.message);
+      setError("Could not create your account right now. Please try again.");
       setSubmitting(false);
       return;
     }
@@ -82,6 +119,8 @@ export function RegisterForm() {
           name="fullName"
           autoComplete="name"
           required
+          minLength={AUTH_NAME_MIN_LENGTH}
+          maxLength={AUTH_NAME_MAX_LENGTH}
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="Arjun Mehta"
@@ -92,6 +131,7 @@ export function RegisterForm() {
           name="email"
           autoComplete="email"
           required
+          maxLength={AUTH_EMAIL_MAX_LENGTH}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
@@ -102,10 +142,11 @@ export function RegisterForm() {
           name="password"
           autoComplete="new-password"
           required
-          minLength={8}
+          minLength={AUTH_NEW_PASSWORD_MIN_LENGTH}
+          maxLength={AUTH_NEW_PASSWORD_MAX_LENGTH}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
+          placeholder={`At least ${AUTH_NEW_PASSWORD_MIN_LENGTH} characters`}
           error={error ?? undefined}
         />
         <Button

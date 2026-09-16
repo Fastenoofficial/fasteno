@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   CalendarClock,
+  History,
   IndianRupee,
   Mail,
   Package,
@@ -13,6 +14,14 @@ import {
 } from "lucide-react";
 import { isDemoMode } from "@/lib/config";
 import { requireAdmin } from "@/lib/auth";
+import { LOW_STOCK_THRESHOLD } from "@/lib/admin-constants";
+import {
+  abbreviatedActor,
+  describeAdminActivity,
+  formatAdminActivityTime,
+  isAdminActivityAction,
+  type AdminActivityRow,
+} from "@/lib/admin-activity";
 import { formatDate, formatINR } from "@/lib/format";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OrderStatusBadge } from "@/components/account/OrderStatusBadge";
@@ -22,12 +31,10 @@ export const metadata: Metadata = {
   title: "Dashboard",
 };
 
-const LOW_STOCK_THRESHOLD = 5;
-
 /** Midnight today in IST (UTC+5:30), as epoch millis — orders are stored
  *  in UTC, so "today's orders" means created_at ≥ this instant. */
 function startOfTodayIstMs(): number {
-  const IST_OFFSET_MS = 330 * 60 * 1000; // +5:30
+  const IST_OFFSET_MS = 330 * 60 * 1000;
   const istNow = new Date(Date.now() + IST_OFFSET_MS);
   return (
     Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) -
@@ -44,8 +51,31 @@ interface RecentOrderRow {
   created_at: string;
 }
 
+interface RawActivityRow {
+  id: number;
+  occurred_at: string;
+  actor_id: string;
+  action: string;
+  target_ids: string[] | null;
+  metadata: Record<string, unknown> | null;
+}
+
+function mapActivity(row: RawActivityRow): AdminActivityRow | null {
+  if (!isAdminActivityAction(row.action) || !Array.isArray(row.target_ids)) {
+    return null;
+  }
+  return {
+    id: row.id,
+    occurred_at: row.occurred_at,
+    actor_id: row.actor_id,
+    action: row.action,
+    target_ids: row.target_ids,
+    metadata: row.metadata,
+  };
+}
+
 export default async function AdminDashboardPage() {
-  if (isDemoMode) return null; // layout renders the demo notice
+  if (isDemoMode) return null;
   await requireAdmin();
 
   const { createClient } = await import("@/lib/supabase/server");
@@ -54,8 +84,10 @@ export default async function AdminDashboardPage() {
   const [
     productCount,
     orderRows,
-    lowStock,
+    lowStockCount,
+    lowStockPreview,
     recentOrders,
+    recentActivity,
     subscriberCount,
     couponCount,
     customerCount,
@@ -65,6 +97,11 @@ export default async function AdminDashboardPage() {
       .select("id", { count: "exact", head: true })
       .eq("active", true),
     supabase.from("orders").select("total, status, created_at"),
+    supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("active", true)
+      .lte("stock", LOW_STOCK_THRESHOLD),
     supabase
       .from("products")
       .select("id, name, stock")
@@ -77,6 +114,12 @@ export default async function AdminDashboardPage() {
       .select("id, order_number, email, total, status, created_at")
       .order("created_at", { ascending: false })
       .limit(8),
+    supabase
+      .from("admin_activity")
+      .select("id, occurred_at, actor_id, action, target_ids, metadata")
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(6),
     supabase
       .from("newsletter_subscribers")
       .select("id", { count: "exact", head: true }),
@@ -91,15 +134,16 @@ export default async function AdminDashboardPage() {
 
   const orders = orderRows.data ?? [];
   const revenue = orders
-    .filter((o) => o.status !== "cancelled")
-    .reduce((sum, o) => sum + (o.total ?? 0), 0);
+    .filter((order) => order.status !== "cancelled")
+    .reduce((sum, order) => sum + (order.total ?? 0), 0);
 
   const todayStartMs = startOfTodayIstMs();
   const todaysOrders = orders.filter(
-    (o) => o.created_at && new Date(o.created_at).getTime() >= todayStartMs,
+    (order) =>
+      order.created_at && new Date(order.created_at).getTime() >= todayStartMs,
   ).length;
   const pendingShipments = orders.filter(
-    (o) => o.status === "pending" || o.status === "confirmed",
+    (order) => order.status === "pending" || order.status === "confirmed",
   ).length;
 
   const stats = [
@@ -141,8 +185,10 @@ export default async function AdminDashboardPage() {
     },
     {
       label: "Low stock",
-      value: String(lowStock.data?.length ?? 0),
-      note: `at ${LOW_STOCK_THRESHOLD} or fewer units`,
+      value: lowStockCount.error ? "—" : String(lowStockCount.count ?? 0),
+      note: lowStockCount.error
+        ? "count temporarily unavailable"
+        : `at ${LOW_STOCK_THRESHOLD} or fewer units`,
       icon: TriangleAlert,
     },
     {
@@ -159,9 +205,12 @@ export default async function AdminDashboardPage() {
     },
   ];
 
+  const activities = ((recentActivity.data ?? []) as RawActivityRow[])
+    .map(mapActivity)
+    .filter((activity): activity is AdminActivityRow => activity !== null);
+
   return (
     <div className="space-y-8">
-      {/* stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map(({ label, value, note, icon: Icon }) => (
           <div key={label} className="border border-line bg-card p-5">
@@ -177,7 +226,6 @@ export default async function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* recent orders */}
       <div className="border border-line bg-card">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 className="font-display text-xl text-ivory">Recent orders</h2>
@@ -222,33 +270,96 @@ export default async function AdminDashboardPage() {
         )}
       </div>
 
-      {/* low stock */}
-      {(lowStock.data ?? []).length > 0 && (
+      <div className="grid gap-8 xl:grid-cols-2">
         <div className="border border-line bg-card">
-          <div className="border-b border-line px-5 py-4">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
             <h2 className="font-display text-xl text-ivory">Low stock</h2>
+            <Link
+              href="/admin/products?stock=low"
+              className="text-xs uppercase tracking-widest text-gold transition-colors hover:text-gold-light"
+            >
+              View all
+            </Link>
           </div>
-          <ul className="divide-y divide-line">
-            {(lowStock.data ?? []).map((p) => (
-              <li key={p.id}>
-                <Link
-                  href={`/admin/products/${p.id}`}
-                  className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-surface"
-                >
-                  <span className="truncate text-sm text-ivory">{p.name}</span>
-                  <span
-                    className={`text-xs font-semibold ${
-                      p.stock === 0 ? "text-danger" : "text-gold"
-                    }`}
+          {lowStockPreview.error ? (
+            <p className="px-5 py-6 text-sm text-danger">
+              Low-stock products are temporarily unavailable.
+            </p>
+          ) : (lowStockPreview.data ?? []).length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                title="Stock levels look healthy"
+                description={`No active products have ${LOW_STOCK_THRESHOLD} units or fewer.`}
+              />
+            </div>
+          ) : (
+            <ul className="divide-y divide-line">
+              {(lowStockPreview.data ?? []).map((product) => (
+                <li key={product.id}>
+                  <Link
+                    href={`/admin/products/${product.id}`}
+                    className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-surface"
                   >
-                    {p.stock === 0 ? "Sold out" : `${p.stock} left`}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                    <span className="truncate text-sm text-ivory">
+                      {product.name}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        product.stock === 0 ? "text-danger" : "text-gold"
+                      }`}
+                    >
+                      {product.stock === 0 ? "Sold out" : `${product.stock} left`}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
+
+        <div className="border border-line bg-card">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <h2 className="flex items-center gap-2 font-display text-xl text-ivory">
+              <History size={18} className="text-gold" />
+              Recent activity
+            </h2>
+            <Link
+              href="/admin/activity"
+              className="text-xs uppercase tracking-widest text-gold transition-colors hover:text-gold-light"
+            >
+              View all
+            </Link>
+          </div>
+          {recentActivity.error ? (
+            <p className="px-5 py-6 text-sm text-danger">
+              Activity is unavailable until migration 009 is applied.
+            </p>
+          ) : activities.length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                title="No admin activity yet"
+                description="Safe product operations will appear here."
+              />
+            </div>
+          ) : (
+            <ul className="divide-y divide-line">
+              {activities.map((activity) => (
+                <li key={activity.id} className="px-5 py-3">
+                  <p className="text-sm text-ivory">
+                    {describeAdminActivity(activity)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {abbreviatedActor(activity.actor_id)} ·{" "}
+                    <time dateTime={activity.occurred_at}>
+                      {formatAdminActivityTime(activity.occurred_at)}
+                    </time>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

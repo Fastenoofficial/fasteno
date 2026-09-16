@@ -1,4 +1,5 @@
 import { isSupabaseConfigured } from "@/lib/config";
+import { normalizeImageSource } from "@/lib/image-security";
 import { seedCategories, seedProducts } from "@/lib/seed-data";
 import type { Category, Product, ProductQuery } from "@/lib/types";
 
@@ -24,6 +25,7 @@ export interface ProductRow {
   images: string[] | null;
   stock: number;
   featured: boolean;
+  featured_order?: number | null;
   active: boolean;
   created_at: string;
   /** SEO overrides (migration 003) — optional so older selects still map. */
@@ -45,9 +47,12 @@ export function mapProductRow(row: ProductRow): Product {
     color: row.color,
     pattern: row.pattern as Product["pattern"],
     tags: row.tags ?? [],
-    images: row.images ?? [],
+    images: (row.images ?? [])
+      .map((image) => normalizeImageSource(image))
+      .filter((image): image is string => image !== null),
     stock: row.stock,
     featured: row.featured,
+    featuredOrder: row.featured_order ?? 0,
     active: row.active,
     createdAt: row.created_at,
     metaTitle: row.meta_title || undefined,
@@ -64,20 +69,20 @@ async function fetchAllProducts(): Promise<Product[]> {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id, slug, name, price, compare_at_price, description, details, material, color, pattern, tags, images, stock, featured, active, created_at, meta_title, meta_description, category_slug:categories!inner(slug)",
+      "id, slug, name, price, compare_at_price, description, details, material, color, pattern, tags, images, stock, featured, featured_order, active, created_at, meta_title, meta_description, category_slug:categories!inner(slug)",
     )
     .eq("active", true);
   if (error || !data) {
     // LIVE mode must never fall back to bundled seed data: the seed rows have
     // demo prices, demo stock and ids that don't exist in the database, so
     // they would show phantom products a customer cannot actually buy (and at
-    // the wrong price). Fail closed — an empty catalog surfaces the outage
-    // instead of quietly selling fiction.
+    // the wrong price). Fail closed through the route error boundary instead
+    // of quietly selling fiction or presenting a false empty collection.
     console.error(
       "catalog: products query failed in LIVE mode —",
       error?.message ?? "no data returned",
     );
-    return [];
+    throw new Error("The product catalog is temporarily unavailable.");
   }
   return (data as unknown[]).map((raw) => {
     const row = raw as Omit<ProductRow, "category_slug"> & {
@@ -98,22 +103,27 @@ export async function getCategories(): Promise<Category[]> {
   const supabase = createPublicClient();
   const { data, error } = await supabase
     .from("categories")
-    .select("id, slug, name, description, sort_order")
-    .order("sort_order");
+    .select(
+      "id, slug, name, description, sort_order, image_url, display_on_home",
+    )
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
   // Same reasoning as fetchAllProducts: no seed fallback in live mode.
   if (error || !data) {
     console.error(
       "catalog: categories query failed in LIVE mode —",
       error?.message ?? "no data returned",
     );
-    return [];
+    throw new Error("The product categories are temporarily unavailable.");
   }
-  return data.map((c) => ({
-    id: c.id,
-    slug: c.slug,
-    name: c.name,
-    description: c.description ?? "",
-    sortOrder: c.sort_order,
+  return data.map((category) => ({
+    id: category.id,
+    slug: category.slug as Category["slug"],
+    name: category.name,
+    description: category.description ?? "",
+    sortOrder: category.sort_order,
+    image_url: normalizeImageSource(category.image_url) ?? undefined,
+    display_on_home: category.display_on_home ?? true,
   }));
 }
 
@@ -164,6 +174,8 @@ export async function getProducts(q: ProductQuery = {}): Promise<Product[]> {
       break;
     case "featured":
     default:
+      // Keep the established general shop sort: featured membership first,
+      // with equal rows retaining the catalog's incoming order.
       products = [...products].sort(
         (a, b) => Number(b.featured) - Number(a.featured),
       );
@@ -186,8 +198,23 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
 }
 
 export async function getFeaturedProducts(limit = 8): Promise<Product[]> {
-  const products = await getProducts({ sort: "featured" });
-  return products.filter((p) => p.featured).slice(0, limit);
+  if (!isSupabaseConfigured) {
+    // Demo mode intentionally follows the authored seed-array order.
+    return seedProducts
+      .filter((product) => product.active && product.featured)
+      .slice(0, limit);
+  }
+
+  const products = await fetchAllProducts();
+  return products
+    .filter((product) => product.active && product.featured)
+    .sort(
+      (a, b) =>
+        (a.featuredOrder ?? 0) - (b.featuredOrder ?? 0) ||
+        a.createdAt.localeCompare(b.createdAt) ||
+        a.id.localeCompare(b.id),
+    )
+    .slice(0, limit);
 }
 
 /** Same category first, then shared tags — excludes the product itself. */

@@ -1,27 +1,40 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Fasteno Shyama · Modern Heritage tokens (light) ──
-     Token NAMES are semantic slots kept from the original theme;
-     only the VALUES changed for the light re-theme. */
-  --color-ink: #F9F8F4;        /* page background — warm ivory paper */
-  --color-surface: #F2EFE9;    /* raised sections / ghost hover ivory */
-  --color-card: #FFFFFF;       /* cards, inputs */
-  --color-line: #E2E0DA;       /* hairline borders */
-  --color-ivory: #1A1C1C;      /* primary text — deep charcoal */
-  --color-muted: #55585A;      /* secondary text */
-  --color-gold: #7A6018;       /* antique gold accent (contrast-safe as text) */
-  --color-gold-light: #CAA829; /* decorative gold fills / hovers */
-  --color-danger: #93222F;     /* muted burgundy */
-  --color-success: #3E7A57;
+  /* Fasteno · keynote luxury commerce palette.
+     Legacy semantic token names stay intact because they are used site-wide. */
+  --color-ink: #FBF9F6;
+  --color-surface: #F5F5F7;
+  --color-card: #FFFFFF;
+  --color-line: #D2D2D7;
+  --color-line-soft: #E5E5EA;
+  --color-ivory: #1D1D1F;
+  --color-muted: #6E6E73;
+  --color-muted-soft: #86868B;
+  --color-gold: #7D622A;
+  --color-gold-light: #C5A059;
+  --color-champagne: #C5A059;
+  --color-action: #0D172A;
+  --color-action-hover: #1E293B;
+  --color-keynote: #000000;
+  --color-danger: #93222F;
+  --color-success: #237A48;
 
-  /* Charcoal color-blocking (dark footer / bands on ivory body) */
-  --color-block: #1A1C1C;       /* charcoal block bg */
-  --color-block-soft: #2F3131;  /* lighter charcoal — hover on dark blocks */
-  --color-block-text: #F1F1EE;  /* text on charcoal blocks */
+  /* Dark keynote surfaces and text used by the shell and editorial bands. */
+  --color-block: #0A0D14;
+  --color-block-soft: #161617;
+  --color-block-text: #F5F5F7;
 
-  --font-display: var(--font-playfair), "Georgia", serif;
+  /* The reference uses a clean sans hierarchy; retain the existing aliases. */
+  --font-display: var(--font-inter), system-ui, sans-serif;
   --font-sans: var(--font-inter), system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  --shadow-card: 0 1px 2px rgba(10, 13, 20, 0.04),
+    0 8px 28px rgba(10, 13, 20, 0.05);
+  --shadow-card-hover: 0 18px 48px rgba(10, 13, 20, 0.11);
 }
 
 html {
@@ -29,45 +42,118 @@ html {
 }
 
 body {
+  overflow-x: hidden;
   background-color: var(--color-ink);
   color: var(--color-ivory);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
   background-color: var(--color-gold-light);
-  color: #1A1C1C;
+  color: var(--color-action);
 }
 
-/* Eyebrow label used across the site */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}
+
+.on-dark :where(a, button, input, select, textarea):focus-visible {
+  outline-color: var(--color-gold-light);
+}
+
+/* Compact luxury metadata label used across the storefront. */
 .eyebrow {
-  font-size: 0.6875rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
   color: var(--color-gold);
-  font-weight: 600;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }
 
-/* Thin gold underline used under section headings */
+.on-dark .eyebrow {
+  color: var(--color-gold-light);
+}
+
+/* Champagne hallmark beneath major headings. */
 .gold-rule {
   width: 3.5rem;
   height: 1px;
-  background: linear-gradient(90deg, var(--color-gold), transparent);
+  background: linear-gradient(90deg, var(--color-gold-light), transparent);
 }
 
-/* Card hover lift — soft high-diffusion shadow per Modern Heritage */
+.surface-card {
+  border: 1px solid var(--color-line-soft);
+  border-radius: 1rem;
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.glass-surface {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 13, 20, 0.88);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shared card movement: subtle, pointer-aware, and reduced-motion safe. */
 .lift {
-  transition: transform 220ms ease, box-shadow 220ms ease,
-    background-color 220ms ease;
-}
-.lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(26, 28, 28, 0.08);
+  transition: transform 300ms ease, box-shadow 300ms ease,
+    border-color 300ms ease, background-color 300ms ease;
 }
 
-/* Scrollbar (webkit) — light, sharp shapes */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #F2EFE9; }
-::-webkit-scrollbar-thumb { background: #C4C7C7; }
-::-webkit-scrollbar-thumb:hover { background: #7A6018; }
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid var(--color-surface);
+  border-radius: 9999px;
+  background: var(--color-line);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold-light);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .lift:hover {
+    transform: none;
+  }
+}

@@ -19,7 +19,7 @@ export function InvoiceActions({ orderId }: { orderId: string }) {
       <button
         type="button"
         onClick={() => window.print()}
-        className="inline-flex cursor-pointer items-center gap-2 bg-block px-6 py-3 text-sm font-medium uppercase tracking-[0.05em] text-block-text transition-colors duration-200 hover:bg-block-soft"
+        className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-action bg-action px-6 py-2.5 text-sm font-medium uppercase tracking-[0.05em] text-white shadow-sm transition-colors duration-200 hover:border-action-hover hover:bg-action-hover"
       >
         <Printer size={16} strokeWidth={1.5} />
         Print / Save as PDF

@@ -3,6 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  AUTH_NEW_PASSWORD_MAX_LENGTH,
+  AUTH_NEW_PASSWORD_MIN_LENGTH,
+} from "@/lib/auth-input";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
@@ -20,8 +24,16 @@ export function ResetPasswordForm() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (password.length < AUTH_NEW_PASSWORD_MIN_LENGTH) {
+      setError(
+        `Password must be at least ${AUTH_NEW_PASSWORD_MIN_LENGTH} characters.`,
+      );
+      return;
+    }
+    if (password.length > AUTH_NEW_PASSWORD_MAX_LENGTH) {
+      setError(
+        `Password must be ${AUTH_NEW_PASSWORD_MAX_LENGTH} characters or fewer.`,
+      );
       return;
     }
     if (password !== confirm) {
@@ -37,9 +49,9 @@ export function ResetPasswordForm() {
 
     if (updateError) {
       setError(
-        /session/i.test(updateError.message)
+        /session|token|expired/i.test(updateError.message)
           ? "Your reset link has expired. Please request a new one."
-          : updateError.message,
+          : "Could not update your password right now. Please try again.",
       );
       setSubmitting(false);
       return;
@@ -74,10 +86,11 @@ export function ResetPasswordForm() {
         name="password"
         autoComplete="new-password"
         required
-        minLength={8}
+        minLength={AUTH_NEW_PASSWORD_MIN_LENGTH}
+        maxLength={AUTH_NEW_PASSWORD_MAX_LENGTH}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="At least 8 characters"
+        placeholder={`At least ${AUTH_NEW_PASSWORD_MIN_LENGTH} characters`}
       />
       <Input
         label="Confirm new password"
@@ -85,7 +98,8 @@ export function ResetPasswordForm() {
         name="confirmPassword"
         autoComplete="new-password"
         required
-        minLength={8}
+        minLength={AUTH_NEW_PASSWORD_MIN_LENGTH}
+        maxLength={AUTH_NEW_PASSWORD_MAX_LENGTH}
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}
         placeholder="Repeat the new password"

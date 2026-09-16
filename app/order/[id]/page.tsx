@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { OrderView } from "@/components/checkout/OrderView";
 import { InvoiceLink } from "@/components/checkout/InvoiceLink";
 import {
@@ -7,6 +8,7 @@ import {
   LocalOrderView,
 } from "@/components/checkout/LocalOrderView";
 import { isDemoMode } from "@/lib/config";
+import { readGuestOrderCredential } from "@/lib/guest-order-access";
 import { getSupabaseOrder } from "@/lib/orders";
 
 export const metadata: Metadata = {
@@ -36,18 +38,15 @@ export default async function OrderPage({
       </>
     );
   } else {
-    const order = await getSupabaseOrder(id);
-    content = order ? (
+    const guestToken = await readGuestOrderCredential(id);
+    const order = await getSupabaseOrder(id, { guestToken });
+    if (!order) notFound();
+    content = (
       <>
         <ConfirmationHeader orderNumber={order.orderNumber} email={order.email} />
         <OrderView order={order} />
         <InvoiceLink orderId={order.id} />
         <ConfirmationFooter />
-      </>
-    ) : (
-      <>
-        <LocalOrderView id={id} />
-        <InvoiceLink orderId={id} requireLocal />
       </>
     );
   }

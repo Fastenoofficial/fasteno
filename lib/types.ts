@@ -37,6 +37,8 @@ export interface Product {
   images: string[]; // public paths, e.g. "/products/midnight-navy-silk-tie.svg"
   stock: number;
   featured: boolean;
+  /** Editorial home-page position; legacy/demo rows default to zero. */
+  featuredOrder?: number;
   active: boolean;
   createdAt: string; // ISO
   /** SEO <title> override for the PDP — empty/undefined falls back to name. */

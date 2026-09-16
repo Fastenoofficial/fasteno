@@ -3,104 +3,110 @@ import { isDemoMode } from "@/lib/config";
 import { sendOrderEmail, sendOwnerOrderAlert } from "@/lib/email";
 import { markOrderPaid, markOrderPaymentFailed } from "@/lib/orders";
 import { verifyRazorpayWebhookSignature } from "@/lib/razorpay";
+import { readBoundedBytes } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
-/** POST /api/razorpay/webhook — Razorpay server-to-server events.
- *
- *  Configure in the Razorpay dashboard (Settings → Webhooks) pointing at
- *  https://<site>/api/razorpay/webhook with the payment.captured and
- *  payment.failed events, and set the same secret in RAZORPAY_WEBHOOK_SECRET.
- *
- *  Signature: x-razorpay-signature = HMAC-SHA256(raw body, webhook secret)
- *  — verified against the RAW body before parsing.
- *
- *  payment.captured → mark the order paid (idempotent: already-paid orders
- *  are skipped, so this coexists with the client-initiated /verify flow).
- *  payment.failed   → payment_status=failed + restore reserved stock
- *  (idempotent: only pending orders flip).
- *
- *  Always answers 200 for verified deliveries — Razorpay retries non-2xx,
- *  and our handlers are safe to re-run anyway. */
+interface RazorpayEvent {
+  event?: unknown;
+  payload?: {
+    payment?: { entity?: Record<string, unknown> };
+  };
+}
+
+/** Verified Razorpay callback. HMAC always covers the exact received bytes. */
 export async function POST(request: Request) {
-  if (isDemoMode) {
-    // No Supabase → nothing to update; acknowledge so test pings succeed.
-    return NextResponse.json({ ok: true, skipped: "demo-mode" });
+  const body = await readBoundedBytes(request, {
+    maxBytes: 256 * 1024,
+    allowedContentTypes: ["application/json"],
+    contentTypeError: "Expected application/json.",
+  });
+  if (!body.ok) {
+    return NextResponse.json({ error: body.error }, { status: body.status });
   }
 
-  const rawBody = await request.text();
-  const signature = request.headers.get("x-razorpay-signature") ?? "";
-
+  if (isDemoMode) {
+    return NextResponse.json({ ok: true, skipped: "demo-mode" });
+  }
   if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
     console.error("webhook: RAZORPAY_WEBHOOK_SECRET is not set — rejecting.");
     return NextResponse.json({ error: "Webhook not configured." }, { status: 503 });
   }
-  if (!verifyRazorpayWebhookSignature(rawBody, signature)) {
+
+  const signature = request.headers.get("x-razorpay-signature")?.trim() ?? "";
+  if (!verifyRazorpayWebhookSignature(body.value, signature)) {
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
   }
 
-  let event: { event?: string; payload?: unknown };
+  let event: RazorpayEvent;
   try {
-    event = JSON.parse(rawBody) as { event?: string; payload?: unknown };
+    const rawText = new TextDecoder("utf-8", { fatal: true }).decode(body.value);
+    event = JSON.parse(rawText) as RazorpayEvent;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const payment = (
-    (event.payload as { payment?: { entity?: Record<string, unknown> } } | undefined)
-      ?.payment?.entity ?? {}
-  ) as Record<string, unknown>;
+  const eventName = typeof event.event === "string" ? event.event : "";
+  const payment = event.payload?.payment?.entity ?? {};
   const razorpayOrderId =
-    typeof payment.order_id === "string" ? payment.order_id : "";
-  const razorpayPaymentId = typeof payment.id === "string" ? payment.id : "";
+    typeof payment.order_id === "string" ? payment.order_id.trim() : "";
+  const razorpayPaymentId =
+    typeof payment.id === "string" ? payment.id.trim() : "";
+  const validOrderId = /^order_[A-Za-z0-9]{6,40}$/.test(razorpayOrderId);
 
-  switch (event.event) {
-    case "payment.captured": {
-      if (!razorpayOrderId || !razorpayPaymentId) break;
-      // payment.entity.amount is the authentic captured amount (paise) —
-      // pass it so markOrderPaid can refuse an amount mismatch.
-      const capturedAmount =
-        typeof payment.amount === "number" ? payment.amount : undefined;
-      const { persisted, alreadyPaid, order, reason } = await markOrderPaid(
-        razorpayOrderId,
-        razorpayPaymentId,
-        { capturedAmount },
-      );
-      if (!persisted) {
-        console.error(
-          `webhook: payment.captured not persisted (${reason ?? "unknown"}) —`,
-          razorpayOrderId,
+  if (eventName === "payment.captured") {
+    if (!validOrderId || !/^pay_[A-Za-z0-9]{6,40}$/.test(razorpayPaymentId)) {
+      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
+    }
+    const capturedAmount =
+      typeof payment.amount === "number" &&
+      Number.isSafeInteger(payment.amount) &&
+      payment.amount >= 0
+        ? payment.amount
+        : undefined;
+    if (capturedAmount === undefined) {
+      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
+    }
+
+    const { persisted, alreadyPaid, order, reason } = await markOrderPaid(
+      razorpayOrderId,
+      razorpayPaymentId,
+      { capturedAmount },
+    );
+    if (!persisted) {
+      console.error(`webhook: payment.captured not persisted (${reason ?? "unknown"}).`);
+      const permanent =
+        reason === "amount_mismatch" ||
+        reason === "payment_id_mismatch" ||
+        reason === "payment_id_conflict" ||
+        reason === "order_cancelled" ||
+        reason === "invalid_state" ||
+        reason === "items_missing" ||
+        reason === "out_of_stock";
+      if (!permanent) {
+        return NextResponse.json(
+          { error: "Order update failed — please retry." },
+          { status: 500 },
         );
-        // Transient failures (DB error, order row not visible yet) → 500 so
-        // Razorpay RETRIES the delivery; a charged-but-unmarked order must
-        // not be silently forfeited. Permanent conditions (amount mismatch,
-        // cancelled order) are acknowledged with 200 — retrying can never
-        // succeed and they are already flagged for manual review.
-        if (reason !== "amount_mismatch" && reason !== "order_cancelled") {
-          return NextResponse.json(
-            { error: "Order update failed — please retry." },
-            { status: 500 },
-          );
-        }
-      } else if (!alreadyPaid && order) {
-        // This delivery did the flip → confirmation + owner alert once.
-        // AWAITED: un-awaited promises are dropped when Vercel freezes the
-        // function after the response.
-        await Promise.all([
-          sendOrderEmail(order, "confirmation"),
-          sendOwnerOrderAlert(order),
-        ]);
       }
-      break;
+    } else if (!alreadyPaid && order) {
+      await Promise.all([
+        sendOrderEmail(order, "confirmation"),
+        sendOwnerOrderAlert(order),
+      ]);
     }
-    case "payment.failed": {
-      if (!razorpayOrderId) break;
-      await markOrderPaymentFailed(razorpayOrderId);
-      break;
+  } else if (eventName === "payment.failed") {
+    if (!validOrderId) {
+      return NextResponse.json({ error: "Invalid payment event." }, { status: 400 });
     }
-    default:
-      // Unsubscribed/unknown event — acknowledge and ignore.
-      break;
+    const failed = await markOrderPaymentFailed(razorpayOrderId);
+    if (!failed.handled) {
+      console.error(`webhook: payment.failed not persisted (${failed.reason ?? "unknown"}).`);
+      return NextResponse.json(
+        { error: "Order update failed — please retry." },
+        { status: 500 },
+      );
+    }
   }
 
   return NextResponse.json({ ok: true });

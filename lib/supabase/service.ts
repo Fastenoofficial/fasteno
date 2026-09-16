@@ -15,3 +15,14 @@ export function createServiceClient() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
+
+/** Fail closed for production operations that must never use an anon/session client. */
+export function requireServiceClient() {
+  const client = createServiceClient();
+  if (!client) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is required for this server operation.",
+    );
+  }
+  return client;
+}

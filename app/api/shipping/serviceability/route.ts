@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isShiprocketConfigured } from "@/lib/config";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { readBoundedJson } from "@/lib/request-body";
+import { clientIp, rateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,10 +12,10 @@ export const runtime = "nodejs";
  *  and returns only a yes/no plus an ETA — never courier rate cards, which
  *  would expose our shipping cost structure. */
 export async function POST(request: Request) {
-  const limited = await rateLimit(`serviceability:${clientIp(request)}`, {
-    limit: 20,
-    windowMs: 60_000,
-  });
+  const limited = await rateLimit(
+    rateLimitKey("serviceability", clientIp(request)),
+    { limit: 20, windowMs: 60_000 },
+  );
   if (!limited.ok) {
     return NextResponse.json(
       { error: "Too many checks — please try again in a minute." },
@@ -27,14 +28,16 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  const parsed = await readBoundedJson(request, { maxBytes: 1_024 });
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { error: parsed.status === 400 ? "Invalid request." : parsed.error },
+      { status: parsed.status },
+    );
   }
 
-  const raw = (body as Record<string, unknown>)?.pincode;
+  const body = (parsed.value ?? {}) as Record<string, unknown>;
+  const raw = body.pincode;
   const pincode = typeof raw === "string" ? raw.replace(/\D/g, "") : "";
   if (pincode.length !== 6) {
     return NextResponse.json(
@@ -42,7 +45,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const cod = Boolean((body as Record<string, unknown>)?.cod);
+
+  if (body.cod !== undefined && typeof body.cod !== "boolean") {
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  }
+  const cod = body.cod ?? false;
 
   // Not configured → tell the client to hide the widget rather than showing
   // a scary error. The store still sells everywhere; we just can't quote.

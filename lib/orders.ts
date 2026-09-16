@@ -6,6 +6,11 @@ import {
 } from "@/lib/config";
 import { getProductsByIds } from "@/lib/catalog";
 import { formatINR } from "@/lib/format";
+import {
+  issueGuestOrderCredential,
+  validateGuestOrderCredential,
+  type GuestOrderCredential,
+} from "@/lib/guest-order-access";
 import { createServiceClient } from "@/lib/supabase/service";
 import type {
   Address,
@@ -94,83 +99,111 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[6-9]\d{9}$/; // Indian 10-digit mobile
 const PINCODE_RE = /^[1-9]\d{5}$/; // 6-digit PIN, no leading zero
 
-const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+const str = (value: unknown): string =>
+  typeof value === "string" ? value.normalize("NFKC").trim() : "";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 type ParseResult =
   | { ok: true; payload: CheckoutPayload }
   | { ok: false; error: string };
 
 /** Validate + normalise an untrusted checkout request body. Never trusts
- *  client prices — only productId/quantity pairs are accepted for items. */
+ *  client prices — only bounded productId/quantity pairs are accepted. */
 export function parseCheckoutPayload(body: unknown): ParseResult {
-  if (typeof body !== "object" || body === null) {
+  if (!isRecord(body)) {
     return { ok: false, error: "Invalid request body." };
   }
-  const b = body as Record<string, unknown>;
 
-  // items → merged, quantity-capped lines
-  if (!Array.isArray(b.items) || b.items.length === 0) {
+  if (!Array.isArray(body.items) || body.items.length === 0) {
     return { ok: false, error: "Your cart is empty." };
   }
-  if (b.items.length > 50) {
+  if (body.items.length > 50) {
     return { ok: false, error: "Too many items in the cart." };
   }
+
   const merged = new Map<string, number>();
-  for (const raw of b.items) {
-    const line = raw as Record<string, unknown>;
-    const productId = str(line.productId);
-    const quantity = Number(line.quantity);
-    if (!productId || !Number.isInteger(quantity) || quantity < 1) {
+  for (const raw of body.items) {
+    if (!isRecord(raw)) {
       return { ok: false, error: "Invalid cart item." };
     }
-    merged.set(productId, Math.min((merged.get(productId) ?? 0) + quantity, 10));
+    const productId = str(raw.productId);
+    const quantity = Number(raw.quantity);
+    if (
+      !productId ||
+      productId.length > 128 ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 10
+    ) {
+      return { ok: false, error: "Invalid cart item." };
+    }
+    const mergedQuantity = (merged.get(productId) ?? 0) + quantity;
+    if (mergedQuantity > 10) {
+      return { ok: false, error: "A product quantity cannot exceed 10." };
+    }
+    merged.set(productId, mergedQuantity);
   }
   const items: CheckoutLine[] = Array.from(merged, ([productId, quantity]) => ({
     productId,
     quantity,
   }));
 
-  // contact
-  const contactRaw = (b.contact ?? {}) as Record<string, unknown>;
-  const email = str(contactRaw.email).toLowerCase();
-  const contactPhone = str(contactRaw.phone).replace(/\D/g, "");
-  if (!EMAIL_RE.test(email)) {
+  if (!isRecord(body.contact)) {
+    return { ok: false, error: "Invalid contact details." };
+  }
+  const email = str(body.contact.email).toLowerCase();
+  const rawContactPhone = str(body.contact.phone);
+  const contactPhone = rawContactPhone.replace(/\D/g, "");
+  if (email.length > 254 || !EMAIL_RE.test(email)) {
     return { ok: false, error: "Please enter a valid email address." };
   }
-  if (!PHONE_RE.test(contactPhone)) {
+  if (rawContactPhone.length > 32 || !PHONE_RE.test(contactPhone)) {
     return { ok: false, error: "Please enter a valid 10-digit mobile number." };
   }
 
-  // shipping address
-  const a = (b.address ?? {}) as Record<string, unknown>;
+  if (!isRecord(body.address)) {
+    return { ok: false, error: "Invalid shipping address." };
+  }
+  const rawAddressPhone = str(body.address.phone);
   const address: Address = {
-    name: str(a.name),
-    phone: str(a.phone).replace(/\D/g, "") || contactPhone,
-    line1: str(a.line1),
-    line2: str(a.line2) || undefined,
-    city: str(a.city),
-    state: str(a.state),
-    pincode: str(a.pincode),
+    name: str(body.address.name),
+    phone: rawAddressPhone.replace(/\D/g, "") || contactPhone,
+    line1: str(body.address.line1),
+    line2: str(body.address.line2) || undefined,
+    city: str(body.address.city),
+    state: str(body.address.state),
+    pincode: str(body.address.pincode),
   };
-  if (!address.name) return { ok: false, error: "Recipient name is required." };
-  if (!address.line1) return { ok: false, error: "Address line 1 is required." };
-  if (!address.city) return { ok: false, error: "City is required." };
-  if (!address.state) return { ok: false, error: "State is required." };
+  if (!address.name || address.name.length > 100) {
+    return { ok: false, error: "Please enter a valid recipient name." };
+  }
+  if (!address.line1 || address.line1.length > 200) {
+    return { ok: false, error: "Please enter a valid address line 1." };
+  }
+  if (address.line2 && address.line2.length > 200) {
+    return { ok: false, error: "Address line 2 is too long." };
+  }
+  if (!address.city || address.city.length > 100) {
+    return { ok: false, error: "Please enter a valid city." };
+  }
+  if (!address.state || address.state.length > 100) {
+    return { ok: false, error: "Please enter a valid state." };
+  }
   if (!PINCODE_RE.test(address.pincode)) {
     return { ok: false, error: "Please enter a valid 6-digit PIN code." };
   }
-  if (!PHONE_RE.test(address.phone)) {
+  if (rawAddressPhone.length > 32 || !PHONE_RE.test(address.phone)) {
     return { ok: false, error: "Please enter a valid delivery phone number." };
   }
 
-  // payment method
-  const paymentMethod = str(b.paymentMethod) as PaymentMethod;
+  const paymentMethod = str(body.paymentMethod) as PaymentMethod;
   if (!["razorpay", "cod", "demo"].includes(paymentMethod)) {
     return { ok: false, error: "Invalid payment method." };
   }
 
-  // coupon code (optional) — re-validated against the coupons table later
-  const couponCode = str(b.couponCode).toUpperCase();
+  const couponCode = str(body.couponCode).toUpperCase();
   if (couponCode.length > 40) {
     return { ok: false, error: "Invalid coupon code." };
   }
@@ -340,9 +373,11 @@ export async function incrementCouponUsage(code: string): Promise<void> {
   if (isDemoMode || !code) return;
   try {
     const service = createServiceClient();
-    const client =
-      service ?? (await (await import("@/lib/supabase/server")).createClient());
-    const { error } = await client.rpc("increment_coupon_usage", {
+    if (!service) {
+      console.error("coupons: usage update unavailable — service role missing.");
+      return;
+    }
+    const { error } = await service.rpc("increment_coupon_usage", {
       p_code: code,
     });
     if (error) {
@@ -360,22 +395,18 @@ const stockPayload = (items: OrderItem[]) =>
 
 export type StockResult =
   | { ok: true; reserved: boolean }
-  | { ok: false; outOfStockName: string };
+  | { ok: false; reason: "out_of_stock"; outOfStockName: string }
+  | { ok: false; reason: "unavailable" };
 
-/** Atomically decrement stock for every line (all-or-nothing inside the
- *  RPC). Demo mode and a missing service key both skip gracefully
- *  (`reserved:false` → callers must not restore what was never taken).
- *  Only a genuine INSUFFICIENT_STOCK raises a caller-visible failure —
- *  infra errors fail open so checkout keeps working. */
+/** Atomically decrement every line. Live checkout fails closed if the
+ * service role or RPC is unavailable; only demo mode may skip reservation. */
 export async function decrementStock(items: OrderItem[]): Promise<StockResult> {
   if (isDemoMode) return { ok: true, reserved: false };
 
   const service = createServiceClient();
   if (!service) {
-    console.warn(
-      "orders: SUPABASE_SERVICE_ROLE_KEY not set — stock decrement skipped.",
-    );
-    return { ok: true, reserved: false };
+    console.error("orders: stock reservation unavailable — service role missing.");
+    return { ok: false, reason: "unavailable" };
   }
 
   const { error } = await service.rpc("decrement_stock", {
@@ -386,25 +417,31 @@ export async function decrementStock(items: OrderItem[]): Promise<StockResult> {
   const match = /INSUFFICIENT_STOCK:([0-9a-fA-F-]+)/.exec(error.message ?? "");
   if (match) {
     const name =
-      items.find((i) => i.productId === match[1])?.name ??
+      items.find((item) => item.productId === match[1])?.name ??
       "One of the items in your cart";
-    return { ok: false, outOfStockName: name };
+    return { ok: false, reason: "out_of_stock", outOfStockName: name };
   }
 
-  console.error("orders: decrement_stock failed —", error.message);
-  return { ok: true, reserved: false };
+  console.error("orders: decrement_stock unavailable —", error.message);
+  return { ok: false, reason: "unavailable" };
 }
 
-/** Return previously reserved stock (order failed / payment failed /
- *  refund). Best-effort: logs, never throws. */
-export async function restoreStock(items: OrderItem[]): Promise<void> {
-  if (isDemoMode || items.length === 0) return;
+/** Return a reservation and report whether the rollback reached the DB. */
+export async function restoreStock(items: OrderItem[]): Promise<boolean> {
+  if (isDemoMode || items.length === 0) return true;
   const service = createServiceClient();
-  if (!service) return;
+  if (!service) {
+    console.error("orders: stock rollback unavailable — service role missing.");
+    return false;
+  }
   const { error } = await service.rpc("restore_stock", {
     items: stockPayload(items),
   });
-  if (error) console.error("orders: restore_stock failed —", error.message);
+  if (error) {
+    console.error("orders: restore_stock failed —", error.message);
+    return false;
+  }
+  return true;
 }
 
 // ── Demo-mode order (client persists it to localStorage `fs-orders`) ──
@@ -508,193 +545,214 @@ interface CreateOrderInput {
 }
 
 type CreateOrderResult =
-  | { ok: true; order: OrderWithExtras }
-  | { ok: false; error: string };
+  | {
+      ok: true;
+      order: OrderWithExtras;
+      /** Returned separately so bearer material never enters an Order object. */
+      guestCredential: GuestOrderCredential | null;
+    }
+  | {
+      ok: false;
+      error: string;
+      reason: "service_unavailable" | "persistence_failed";
+    };
 
-/** Insert an order (+ items) into Supabase. Attaches user_id when a session
- *  exists; guest orders insert with user_id null (allowed by RLS).
- *
- *  RLS nuance: the orders SELECT policy only covers owners/admins, so a
- *  guest insert cannot use `return=representation` (PostgREST would reject
- *  the whole statement). Logged-in users insert-with-select to receive the
- *  DB-generated FS-1000x order number; guests insert with a server-generated
- *  id + order number (FS-9xxxxx range, clear of the sequence) and
- *  `return=minimal`. */
+/**
+ * Insert a live order and all item snapshots through one required service
+ * client. The session client is used only to authenticate ownership; it never
+ * writes orders. Any item/credential failure removes the parent row (items
+ * cascade) so checkout can safely roll back its stock reservation.
+ */
 export async function createSupabaseOrder(
   input: CreateOrderInput,
 ): Promise<CreateOrderResult> {
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  const service = createServiceClient();
+  if (!service) {
+    console.error("orders: creation unavailable — service role missing.");
+    return {
+      ok: false,
+      error: "Ordering is temporarily unavailable. Please try again shortly.",
+      reason: "service_unavailable",
+    };
+  }
 
+  const { createClient } = await import("@/lib/supabase/server");
+  const sessionClient = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
 
-  // Callers only pass a code that passed validation — keep it even when the
-  // money discount is 0 (free_shipping coupons waive the fee instead).
   const couponCode = input.couponCode ?? null;
+  const { data: row, error: orderError } = await service
+    .from("orders")
+    .insert({
+      email: input.payload.contact.email,
+      phone: input.payload.contact.phone,
+      shipping_address: input.payload.address,
+      subtotal: input.totals.subtotal,
+      shipping_fee: input.totals.shippingFee,
+      total: input.totals.total,
+      payment_method: input.paymentMethod,
+      payment_status: input.paymentStatus,
+      status: input.status,
+      razorpay_order_id: input.razorpayOrderId ?? null,
+      razorpay_payment_id: input.razorpayPaymentId ?? null,
+      coupon_code: couponCode,
+      discount: input.totals.discount,
+      user_id: user?.id ?? null,
+    })
+    .select("*")
+    .single();
 
-  const baseRow = {
-    email: input.payload.contact.email,
-    phone: input.payload.contact.phone,
-    shipping_address: input.payload.address,
-    subtotal: input.totals.subtotal,
-    shipping_fee: input.totals.shippingFee,
-    total: input.totals.total,
-    payment_method: input.paymentMethod,
-    payment_status: input.paymentStatus,
-    status: input.status,
-    razorpay_order_id: input.razorpayOrderId ?? null,
-    razorpay_payment_id: input.razorpayPaymentId ?? null,
-    coupon_code: couponCode,
-    discount: input.totals.discount,
+  if (orderError || !row) {
+    console.error("orders: insert failed —", orderError?.message);
+    return {
+      ok: false,
+      error: "Could not save your order. Please try again.",
+      reason: "persistence_failed",
+    };
+  }
+
+  const order = mapOrderRow(row as OrderRow, input.items);
+  const removePartialOrder = async (failure: string) => {
+    const { error } = await service.from("orders").delete().eq("id", order.id);
+    if (error) {
+      console.error(
+        `orders: CRITICAL partial-order cleanup failed after ${failure} —`,
+        error.message,
+      );
+    }
   };
 
-  let order: OrderWithExtras | null = null;
-
-  if (user) {
-    const { data: row, error } = await supabase
-      .from("orders")
-      .insert({ ...baseRow, user_id: user.id })
-      .select("*")
-      .single();
-    if (error || !row) {
-      console.error("orders: insert failed —", error?.message);
-      return { ok: false, error: "Could not save your order. Please try again." };
-    }
-    order = mapOrderRow(row as OrderRow, input.items);
-  } else {
-    // Guest path — generate id + order number ourselves, no returning.
-    // Prefer the service-role client: the tightened orders INSERT policy
-    // (migration 004) only lets the public anon key insert PENDING orders,
-    // so routing guest inserts through the service role both bypasses that
-    // constraint safely and removes any client's ability to forge order
-    // state. Falls back to the anon client (still policy-constrained) when
-    // no service key is configured.
-    const guestClient = createServiceClient() ?? supabase;
-    for (let attempt = 0; attempt < 2 && !order; attempt++) {
-      const id = randomUUID();
-      const orderNumber = `FS-${900000 + Math.floor(Math.random() * 100000)}`;
-      const { error } = await guestClient
-        .from("orders")
-        .insert({ ...baseRow, id, order_number: orderNumber, user_id: null });
-      if (!error) {
-        order = mapOrderRow(
-          {
-            ...baseRow,
-            id,
-            order_number: orderNumber,
-            user_id: null,
-            created_at: new Date().toISOString(),
-          },
-          input.items,
-        );
-      } else if (attempt === 1) {
-        console.error("orders: guest insert failed —", error.message);
-        return { ok: false, error: "Could not save your order. Please try again." };
-      }
-    }
-  }
-
-  if (!order) {
-    return { ok: false, error: "Could not save your order. Please try again." };
-  }
-
-  // Prefer the service client for order_items: the RLS insert policy checks
-  // the parent order via an EXISTS subquery on orders, which the anon
-  // orders-SELECT policy hides for guest rows — so guest item inserts are
-  // blocked under anon even though the guest order insert itself succeeds.
-  const itemsClient = createServiceClient() ?? supabase;
-  const { error: itemsError } = await itemsClient.from("order_items").insert(
-    input.items.map((i) => ({
-      order_id: order!.id,
-      product_id: i.productId,
-      name: i.name,
-      price: i.price,
-      quantity: i.quantity,
-      image: i.image,
+  const { error: itemsError } = await service.from("order_items").insert(
+    input.items.map((item) => ({
+      order_id: order.id,
+      product_id: item.productId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      image: item.image,
     })),
   );
   if (itemsError) {
-    // Order row exists — return it anyway, items travel with the response.
     console.error("orders: order_items insert failed —", itemsError.message);
+    await removePartialOrder("item insert failure");
+    return {
+      ok: false,
+      error: "Could not save your order. Please try again.",
+      reason: "persistence_failed",
+    };
   }
 
-  return { ok: true, order };
+  let guestCredential: GuestOrderCredential | null = null;
+  if (!user) {
+    guestCredential = await issueGuestOrderCredential(
+      order.id,
+      undefined,
+      service,
+    );
+    if (!guestCredential) {
+      await removePartialOrder("guest credential failure");
+      return {
+        ok: false,
+        error: "Could not securely save your order. Please try again.",
+        reason: "persistence_failed",
+      };
+    }
+  }
+
+  return { ok: true, order, guestCredential };
 }
 
-/** Fetch a single order (+ items) from Supabase. RLS applies for signed-in
- *  users (owners and admins). For a visitor with NO session, guest orders
- *  (user_id IS NULL) are additionally resolvable via the service client:
- *  the order id is an unguessable UUIDv4 that only ever leaves the system in
- *  the checkout response and the confirmation email, so possession of the
- *  link IS the credential — this makes the "View your order" email CTA work
- *  cross-device instead of dead-ending. Registered users' orders are never
- *  served this way (they sign in). */
-export async function getSupabaseOrder(id: string): Promise<OrderWithExtras | null> {
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+/**
+ * Fetch an order for an owner/admin session or for a guest presenting the
+ * separately issued scoped credential. UUID-only access is limited to the
+ * one migration-stamped grace deadline on pre-006 guest rows.
+ */
+export async function getSupabaseOrder(
+  id: string,
+  options: { guestToken?: string | null } = {},
+): Promise<OrderWithExtras | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return null;
+  }
 
-  let { data: row, error } = await supabase
+  const { createClient } = await import("@/lib/supabase/server");
+  const sessionClient = await createClient();
+  const ownerRead = await sessionClient
     .from("orders")
     .select("*")
     .eq("id", id)
     .maybeSingle();
 
-  if (error || !row) {
-    // Guest fallback — only when nobody is signed in, and only for rows
-    // that belong to no account.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) return null;
+  let row: OrderRow | null = (ownerRead.data as OrderRow | null) ?? null;
+  let itemsClient = sessionClient;
+
+  if (!row) {
     const service = createServiceClient();
     if (!service) return null;
-    const guest = await service
+    const guestRead = await service
       .from("orders")
       .select("*")
       .eq("id", id)
       .is("user_id", null)
       .maybeSingle();
-    if (guest.error || !guest.data) return null;
-    row = guest.data;
+    if (guestRead.error || !guestRead.data) return null;
+
+    const guestRow = guestRead.data as OrderRow & {
+      guest_legacy_access_until?: string | null;
+    };
+    const credential = options.guestToken
+      ? await validateGuestOrderCredential(id, options.guestToken)
+      : { valid: false };
+    const legacyDeadline = guestRow.guest_legacy_access_until
+      ? Date.parse(guestRow.guest_legacy_access_until)
+      : Number.NaN;
+    const legacyAllowed =
+      Number.isFinite(legacyDeadline) && legacyDeadline > Date.now();
+    if (!credential.valid && !legacyAllowed) return null;
+
+    row = guestRow;
+    itemsClient = service;
   }
 
-  // Items: same client rules — service client covers the guest path (the
-  // order_items SELECT policy checks the parent order, invisible to anon).
-  const itemsClient =
-    (row as OrderRow).user_id === null
-      ? (createServiceClient() ?? supabase)
-      : supabase;
-  const { data: itemRows } = await itemsClient
+  const { data: itemRows, error: itemsError } = await itemsClient
     .from("order_items")
     .select("product_id, name, price, quantity, image")
     .eq("order_id", id);
+  if (itemsError) {
+    console.error("orders: order item read failed —", itemsError.message);
+    return null;
+  }
 
-  const items: OrderItem[] = (itemRows ?? []).map((i) => ({
-    productId: i.product_id ?? "",
-    name: i.name,
-    price: i.price,
-    quantity: i.quantity,
-    image: i.image ?? "",
+  const items: OrderItem[] = (itemRows ?? []).map((item) => ({
+    productId: item.product_id ?? "",
+    name: item.name,
+    price: item.price,
+    quantity: item.quantity,
+    image: item.image ?? "",
   }));
-
-  return mapOrderRow(row as OrderRow, items);
+  return mapOrderRow(row, items);
 }
 
-/** Mark a Razorpay order paid after signature/webhook verification.
- *  Idempotent — an already-paid order is left untouched (`alreadyPaid`).
- *  Also recovers orders in payment_status=failed: Razorpay lets customers
- *  retry inside the same widget (failed UPI → successful card on the SAME
- *  razorpay order), so a capture after a failed attempt must still land —
- *  and must re-reserve the stock that the failed handler restored.
- *
- *  RLS only grants UPDATE on orders to admins, so this prefers the
- *  service-role client. Without it the update falls back to the session
- *  client and will succeed only for admin sessions — callers report
- *  persistence honestly either way. Returns the updated order (with items)
- *  when this call did the flip, so callers can send the confirmation
- *  email exactly once. */
+export type PaymentPersistenceReason =
+  | "service_unavailable"
+  | "not_found"
+  | "read_error"
+  | "amount_mismatch"
+  | "payment_id_mismatch"
+  | "payment_id_conflict"
+  | "order_cancelled"
+  | "invalid_state"
+  | "items_missing"
+  | "out_of_stock"
+  | "update_error";
+
+/**
+ * Atomically confirms a Razorpay capture. Migration 006 locks the order and,
+ * for a previously failed payment, re-reserves every item before changing the
+ * order to paid. A failed reservation leaves both stock and order unchanged.
+ */
 export async function markOrderPaid(
   razorpayOrderId: string,
   razorpayPaymentId: string,
@@ -703,94 +761,26 @@ export async function markOrderPaid(
   persisted: boolean;
   alreadyPaid: boolean;
   order: OrderWithExtras | null;
-  /** Why persistence failed — lets the webhook decide between retrying
-   *  (transient) and acknowledging (permanent, flagged for manual review). */
-  reason?:
-    | "not_found"
-    | "read_error"
-    | "amount_mismatch"
-    | "order_cancelled"
-    | "update_error"
-    | "raced";
+  reason?: PaymentPersistenceReason;
 }> {
   const service = createServiceClient();
-  const client =
-    service ?? (await (await import("@/lib/supabase/server")).createClient());
-
-  const { data: existing, error: readError } = await client
-    .from("orders")
-    .select("id, payment_status, status, total")
-    .eq("razorpay_order_id", razorpayOrderId)
-    .maybeSingle();
-  if (readError || !existing) {
-    if (readError) console.error("orders: mark-paid read failed —", readError.message);
+  if (!service) {
+    console.error("orders: payment confirmation unavailable — service role missing.");
     return {
       persisted: false,
       alreadyPaid: false,
       order: null,
-      reason: readError ? "read_error" : "not_found",
-    };
-  }
-  if (existing.payment_status === "paid") {
-    return { persisted: true, alreadyPaid: true, order: null };
-  }
-
-  // A capture landing on a CANCELLED order (customer cancelled while the
-  // widget was open, or admin cancelled a stale one) must NOT resurrect it:
-  // its stock was already restored on cancellation, so flipping it back to
-  // confirmed would oversell. The money IS captured — flag loudly for a
-  // manual refund instead.
-  if (existing.status === "cancelled") {
-    console.error(
-      `orders: PAYMENT CAPTURED FOR CANCELLED ORDER ${existing.id} ` +
-        `(razorpay order ${razorpayOrderId}, payment ${razorpayPaymentId}). ` +
-        `Order left cancelled — REFUND THIS PAYMENT manually from the Razorpay dashboard.`,
-    );
-    return {
-      persisted: false,
-      alreadyPaid: false,
-      order: null,
-      reason: "order_cancelled",
+      reason: "service_unavailable",
     };
   }
 
-  // Defence in depth: when the caller has an AUTHENTIC captured amount (the
-  // webhook's payment.entity.amount), it must equal the total we fixed on the
-  // order at creation. A Razorpay order can only be paid for its own amount,
-  // so a mismatch means tampering or a wrong-order mapping — refuse to flip
-  // and flag for manual review rather than confirm an underpaid order.
-  if (
-    typeof opts.capturedAmount === "number" &&
-    opts.capturedAmount !== existing.total
-  ) {
-    console.error(
-      `orders: CAPTURED AMOUNT MISMATCH for razorpay order ${razorpayOrderId} — ` +
-        `expected ${existing.total} paise, captured ${opts.capturedAmount}. ` +
-        `Order NOT marked paid; needs manual review.`,
-    );
-    return {
-      persisted: false,
-      alreadyPaid: false,
-      order: null,
-      reason: "amount_mismatch",
-    };
-  }
-  const wasFailed = existing.payment_status === "failed";
-
-  const { data, error } = await client
-    .from("orders")
-    .update({
-      payment_status: "paid",
-      status: "confirmed",
-      razorpay_payment_id: razorpayPaymentId,
-    })
-    .eq("id", existing.id)
-    .in("payment_status", ["pending", "failed"])
-    .neq("status", "cancelled")
-    .select("*");
-
+  const { data, error } = await service.rpc("confirm_razorpay_order_payment", {
+    p_razorpay_order_id: razorpayOrderId,
+    p_razorpay_payment_id: razorpayPaymentId,
+    p_captured_amount: opts.capturedAmount ?? null,
+  });
   if (error) {
-    console.error("orders: mark-paid failed —", error.message);
+    console.error("orders: payment confirmation RPC failed —", error.message);
     return {
       persisted: false,
       alreadyPaid: false,
@@ -798,48 +788,63 @@ export async function markOrderPaid(
       reason: "update_error",
     };
   }
-  const row = (data ?? [])[0] as OrderRow | undefined;
-  if (!row)
-    return { persisted: false, alreadyPaid: false, order: null, reason: "raced" };
 
-  const { data: itemRows } = await client
-    .from("order_items")
-    .select("product_id, name, price, quantity, image")
-    .eq("order_id", row.id);
-  const items: OrderItem[] = (itemRows ?? []).map((i) => ({
-    productId: i.product_id ?? "",
-    name: i.name,
-    price: i.price,
-    quantity: i.quantity,
-    image: i.image ?? "",
+  const outcome = (data ?? {}) as {
+    ok?: boolean;
+    already_paid?: boolean;
+    order_id?: string;
+    reason?: string;
+    item_name?: string;
+  };
+  if (outcome.ok !== true || !outcome.order_id) {
+    const allowedReasons: PaymentPersistenceReason[] = [
+      "not_found",
+      "amount_mismatch",
+      "payment_id_mismatch",
+      "payment_id_conflict",
+      "order_cancelled",
+      "invalid_state",
+      "items_missing",
+      "out_of_stock",
+    ];
+    const reason = allowedReasons.includes(outcome.reason as PaymentPersistenceReason)
+      ? (outcome.reason as PaymentPersistenceReason)
+      : "update_error";
+    console.error(
+      `orders: captured payment not confirmed (${reason})${outcome.item_name ? ` for ${outcome.item_name}` : ""}.`,
+    );
+    return { persisted: false, alreadyPaid: false, order: null, reason };
+  }
+  if (outcome.already_paid) {
+    return { persisted: true, alreadyPaid: true, order: null };
+  }
+
+  const [orderRead, itemsRead] = await Promise.all([
+    service.from("orders").select("*").eq("id", outcome.order_id).single(),
+    service
+      .from("order_items")
+      .select("product_id, name, price, quantity, image")
+      .eq("order_id", outcome.order_id),
+  ]);
+  if (orderRead.error || !orderRead.data || itemsRead.error) {
+    console.error(
+      "orders: confirmed payment but post-confirmation read failed —",
+      orderRead.error?.message ?? itemsRead.error?.message,
+    );
+    return { persisted: true, alreadyPaid: false, order: null };
+  }
+
+  const items: OrderItem[] = (itemsRead.data ?? []).map((item) => ({
+    productId: item.product_id ?? "",
+    name: item.name,
+    price: item.price,
+    quantity: item.quantity,
+    image: item.image ?? "",
   }));
+  const paidOrder = mapOrderRow(orderRead.data as OrderRow, items);
 
-  if (wasFailed && items.length > 0) {
-    // The failed handler restored this order's stock — take it back.
-    const result = await decrementStock(items);
-    if (!result.ok) {
-      // Payment is captured; stock ran out meanwhile. Flag for the admin.
-      console.error(
-        `orders: captured after failure but stock unavailable for "${result.outOfStockName}" — order ${row.id} needs manual review.`,
-      );
-    }
-  }
+  if (paidOrder.couponCode) await incrementCouponUsage(paidOrder.couponCode);
 
-  const paidOrder = mapOrderRow(row, items);
-  // Count the coupon redemption HERE — the moment payment is confirmed — and
-  // only on the call that actually flipped the order (an already-paid order
-  // returns earlier). This replaces the old count-at-order-creation for
-  // Razorpay, so an abandoned/failed online checkout no longer burns a
-  // redemption. COD still counts at placement (the order is confirmed there).
-  if (paidOrder.couponCode) {
-    // Awaited: an un-awaited promise is dropped when the serverless function
-    // freezes after the response. incrementCouponUsage never throws.
-    await incrementCouponUsage(paidOrder.couponCode);
-  }
-
-  // Optional auto-booking of the courier the moment payment clears. Gated on
-  // SHIPROCKET_AUTO_SHIP=1 (default off) and never throws, so a courier
-  // outage can't turn a captured payment into an error response.
   try {
     const { autoShipIfEnabled } = await import("@/lib/shipping-sync");
     await autoShipIfEnabled(paidOrder.id);
@@ -850,117 +855,104 @@ export async function markOrderPaid(
   return { persisted: true, alreadyPaid: false, order: paidOrder };
 }
 
-/** Webhook payment.failed handler: flip a still-pending Razorpay order to
- *  payment_status=failed and return its reserved stock. Idempotent — the
- *  pending-only filter makes a second delivery (or a failed→captured retry
- *  race) a no-op. */
+export type PaymentFailureReason =
+  | "service_unavailable"
+  | "not_found"
+  | "update_error";
+
+/** Atomically marks a pending payment failed and restores its reservation. */
 export async function markOrderPaymentFailed(
   razorpayOrderId: string,
-): Promise<{ updated: boolean }> {
-  if (isDemoMode) return { updated: false };
+): Promise<{ handled: boolean; updated: boolean; reason?: PaymentFailureReason }> {
+  if (isDemoMode) return { handled: true, updated: false };
   const service = createServiceClient();
   if (!service) {
-    console.error(
-      "orders: cannot mark payment failed — SUPABASE_SERVICE_ROLE_KEY not set.",
-    );
-    return { updated: false };
+    console.error("orders: cannot mark payment failed — service role missing.");
+    return { handled: false, updated: false, reason: "service_unavailable" };
   }
 
-  // neq cancelled: a customer/admin cancellation already restored the stock
-  // for this order — flipping it here too would restore it a second time.
-  const { data, error } = await service
-    .from("orders")
-    .update({ payment_status: "failed" })
-    .eq("razorpay_order_id", razorpayOrderId)
-    .eq("payment_status", "pending")
-    .neq("status", "cancelled")
-    .select("id");
+  const { data, error } = await service.rpc("fail_razorpay_order_payment", {
+    p_razorpay_order_id: razorpayOrderId,
+  });
   if (error) {
-    console.error("orders: mark-failed failed —", error.message);
-    return { updated: false };
+    console.error("orders: mark-failed RPC failed —", error.message);
+    return { handled: false, updated: false, reason: "update_error" };
   }
-  const orderId = (data ?? [])[0]?.id as string | undefined;
-  if (!orderId) return { updated: false };
-
-  const { data: items } = await service
-    .from("order_items")
-    .select("product_id, quantity")
-    .eq("order_id", orderId);
-  if (items && items.length > 0) {
-    const { error: rpcError } = await service.rpc("restore_stock", { items });
-    if (rpcError) {
-      console.error("orders: restore_stock failed —", rpcError.message);
-    }
+  const outcome = (data ?? {}) as {
+    ok?: boolean;
+    updated?: boolean;
+    reason?: string;
+  };
+  if (outcome.ok !== true) {
+    return {
+      handled: false,
+      updated: false,
+      reason: outcome.reason === "not_found" ? "not_found" : "update_error",
+    };
   }
-  return { updated: true };
+  return { handled: true, updated: outcome.updated === true };
 }
 
-/** Reaper for abandoned online checkouts: a customer who dismisses the
- *  Razorpay widget leaves an order stuck in payment_status=pending that still
- *  holds its reserved stock (there is no browser signal for a dismissal).
- *  This flips such orders older than `olderThanMinutes` to failed and returns
- *  their stock — the same effect as a payment.failed webhook. Idempotent and
- *  race-safe: the pending-only guarded update means an order captured in the
- *  meantime is skipped, and a late capture afterwards still recovers via
- *  markOrderPaid (failed → paid re-reserves stock). Intended to run on a
- *  schedule (Vercel Cron → /api/cron/reap-orders). Never throws. */
+export type StaleOrderReapResult =
+  | { ok: true; reaped: number }
+  | {
+      ok: false;
+      reaped: number;
+      reason: "service_unavailable" | "query_failed" | "transition_failed";
+    };
+
+/** Reap abandoned pending Razorpay orders through the same atomic
+ * failed+restore transition used by the webhook. Infrastructure failures are
+ * returned explicitly so the authenticated cron route can emit a non-2xx. */
 export async function reapStalePendingRazorpayOrders(
   olderThanMinutes = 45,
-): Promise<{ reaped: number }> {
-  if (isDemoMode) return { reaped: 0 };
+): Promise<StaleOrderReapResult> {
+  if (isDemoMode) return { ok: true, reaped: 0 };
   const service = createServiceClient();
   if (!service) {
-    console.error(
-      "orders: cannot reap stale orders — SUPABASE_SERVICE_ROLE_KEY not set.",
-    );
-    return { reaped: 0 };
+    console.error("orders: cannot reap stale orders — service role missing.");
+    return { ok: false, reaped: 0, reason: "service_unavailable" };
   }
 
   const cutoffIso = new Date(
     Date.now() - olderThanMinutes * 60_000,
   ).toISOString();
-  // neq cancelled: cancelled orders already had their stock restored by the
-  // cancellation flow — reaping them again would double-restore.
   const { data: stale, error } = await service
     .from("orders")
-    .select("id, order_items(product_id, quantity)")
+    .select("razorpay_order_id")
     .eq("payment_method", "razorpay")
     .eq("payment_status", "pending")
     .neq("status", "cancelled")
     .lt("created_at", cutoffIso)
+    .not("razorpay_order_id", "is", null)
     .limit(100);
   if (error) {
     console.error("orders: reap query failed —", error.message);
-    return { reaped: 0 };
+    return { ok: false, reaped: 0, reason: "query_failed" };
   }
-  if (!stale || stale.length === 0) return { reaped: 0 };
 
   let reaped = 0;
-  for (const o of stale) {
-    // Guarded flip — only if still pending and not cancelled meanwhile
-    // (skips a concurrent capture or cancellation).
-    const { data: flipped } = await service
-      .from("orders")
-      .update({ payment_status: "failed" })
-      .eq("id", o.id)
-      .eq("payment_status", "pending")
-      .neq("status", "cancelled")
-      .select("id");
-    if (!flipped || flipped.length === 0) continue;
-
-    const items = (
-      (o.order_items ?? []) as { product_id: string | null; quantity: number }[]
-    )
-      .filter((i) => i.product_id)
-      .map((i) => ({ product_id: i.product_id as string, quantity: i.quantity }));
-    if (items.length > 0) {
-      const { error: rpcError } = await service.rpc("restore_stock", { items });
-      if (rpcError) {
-        console.error("orders: reap restore_stock failed —", rpcError.message);
-      }
+  let transitionFailed = false;
+  for (const row of stale ?? []) {
+    if (!row.razorpay_order_id) continue;
+    const result = await service.rpc("fail_razorpay_order_payment", {
+      p_razorpay_order_id: row.razorpay_order_id,
+    });
+    if (result.error) {
+      transitionFailed = true;
+      console.error("orders: atomic reap failed —", result.error.message);
+      continue;
     }
-    reaped += 1;
+    const outcome = (result.data ?? {}) as { ok?: boolean; updated?: boolean };
+    if (outcome.ok !== true) {
+      transitionFailed = true;
+      console.error("orders: atomic reap returned an unsuccessful outcome.");
+      continue;
+    }
+    if (outcome.updated) reaped += 1;
   }
   if (reaped > 0) console.log(`orders: reaped ${reaped} stale pending order(s).`);
-  return { reaped };
+  return transitionFailed
+    ? { ok: false, reaped, reason: "transition_failed" }
+    : { ok: true, reaped };
 }

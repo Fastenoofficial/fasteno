@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { StorefrontImage } from "@/components/ui/StorefrontImage";
 
-/** Client island: PDP image gallery with thumbnail switcher.
- *  Each product ships two SVGs (main + detail). Plain <img> — never next/image. */
-
+/** Client island: PDP image gallery with resilient main and thumbnail images. */
 export function ProductGallery({
   images,
   name,
@@ -16,32 +15,38 @@ export function ProductGallery({
   const current = images[active] ?? images[0];
 
   return (
-    <div className="space-y-3">
-      <div className="overflow-hidden border border-line bg-surface">
-        <img
+    <div className="mx-auto w-full max-w-2xl space-y-3 lg:max-w-none">
+      <div className="overflow-hidden rounded-3xl border border-line-soft bg-surface shadow-[var(--shadow-card)]">
+        <StorefrontImage
           src={current}
           alt={name}
           className="aspect-[4/5] h-auto w-full object-cover"
         />
       </div>
       {images.length > 1 && (
-        <div className="flex gap-3">
-          {images.map((src, i) => (
+        <div
+          role="group"
+          aria-label={`Choose an image of ${name}`}
+          className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
+        >
+          {images.map((src, index) => (
             <button
-              key={src}
+              key={`${src}-${index}`}
               type="button"
-              aria-label={`View image ${i + 1} of ${name}`}
-              aria-pressed={i === active}
-              onClick={() => setActive(i)}
-              className={`w-20 overflow-hidden border transition-colors cursor-pointer sm:w-24 ${
-                i === active
-                  ? "border-gold"
+              aria-label={`Show image ${index + 1} of ${images.length} for ${name}`}
+              aria-pressed={index === active}
+              onClick={() => setActive(index)}
+              className={`w-20 shrink-0 snap-start cursor-pointer overflow-hidden rounded-xl border bg-surface transition-[border-color,opacity,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:w-24 ${
+                index === active
+                  ? "border-gold ring-1 ring-gold/25"
                   : "border-line opacity-70 hover:border-gold/60 hover:opacity-100"
               }`}
             >
-              <img
+              <StorefrontImage
                 src={src}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="aspect-[4/5] h-auto w-full object-cover"
               />
             </button>

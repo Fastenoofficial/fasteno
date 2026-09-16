@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getCategories, getFeaturedProducts } from "@/lib/catalog";
+import { ProductListAnalytics } from "@/lib/analytics-client";
 import { ProductCard } from "@/components/ui/ProductCard";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { Hero } from "@/components/home/Hero";
@@ -9,7 +11,6 @@ import { OccasionStrip } from "@/components/home/OccasionStrip";
 import { CraftsmanshipBand } from "@/components/home/CraftsmanshipBand";
 import { NewsletterSignup } from "@/components/home/NewsletterSignup";
 import { SITE_NAME, SITE_TAGLINE } from "@/lib/config";
-import Link from "next/link";
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} — Premium Ties, Cufflinks & Formal Accessories`,
@@ -26,7 +27,6 @@ export default async function HomePage() {
     <>
       <Hero />
 
-      {/* category tiles */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
         <SectionHeading
           eyebrow="The collections"
@@ -36,7 +36,6 @@ export default async function HomePage() {
         <CategoryTiles categories={categories} />
       </section>
 
-      {/* featured products */}
       <section className="border-t border-line bg-surface">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
           <SectionHeading
@@ -51,15 +50,20 @@ export default async function HomePage() {
               View all <ArrowRight size={14} aria-hidden />
             </Link>
           </SectionHeading>
+          <ProductListAnalytics list="home_featured" products={featured} />
           <div className="grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4">
-            {featured.map((product) => (
-              <ProductCard key={product.id} product={product} />
+            {featured.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                listContext="home_featured"
+                position={index}
+              />
             ))}
           </div>
         </div>
       </section>
 
-      {/* shop by occasion */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-20">
         <SectionHeading
           eyebrow="Dress the moment"
@@ -70,7 +74,6 @@ export default async function HomePage() {
       </section>
 
       <CraftsmanshipBand />
-
       <NewsletterSignup />
     </>
   );

@@ -32,21 +32,23 @@ const occasions = [
 
 export function OccasionStrip() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-5">
+    <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4 lg:gap-6">
       {occasions.map(({ tag, label, blurb, icon: Icon }) => (
         <Link
           key={tag}
           href={`/shop?tag=${tag}`}
-          className="lift group flex flex-col border border-line bg-card p-6"
+          className="lift group flex flex-col rounded-2xl border border-line-soft bg-card p-6 shadow-[var(--shadow-card)]"
         >
-          <Icon size={22} className="text-gold" aria-hidden />
-          <h3 className="mt-4 font-display text-xl text-ivory transition-colors group-hover:text-gold">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-surface text-gold">
+            <Icon size={20} aria-hidden />
+          </span>
+          <h3 className="mt-5 font-display text-xl font-semibold tracking-[-0.02em] text-ivory transition-colors group-hover:text-gold">
             {label}
           </h3>
           <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">
             {blurb}
           </p>
-          <p className="eyebrow mt-5">Shop the occasion →</p>
+          <p className="eyebrow mt-6">Shop the occasion →</p>
         </Link>
       ))}
     </div>

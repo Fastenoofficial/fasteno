@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const fieldBase =
-  "w-full bg-transparent border-0 border-b border-ivory/60 px-0 py-2.5 text-sm text-ivory placeholder:text-muted/60 focus:border-ivory focus:shadow-[0_1px_0_0_var(--color-ivory)] focus:outline-none transition-[border-color,box-shadow]";
+  "w-full rounded-xl border border-line bg-card px-4 py-3 text-sm text-ivory shadow-sm placeholder:text-muted-soft transition-[border-color,box-shadow] focus:border-gold-light focus:outline-none focus:ring-2 focus:ring-gold-light/20";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -13,7 +13,7 @@ export function Input({ label, error, id, className = "", ...rest }: InputProps)
   return (
     <label className="block">
       {label && (
-        <span className="mb-1.5 block text-xs uppercase tracking-widest text-muted">
+        <span className="mb-2 block text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
           {label}
         </span>
       )}
@@ -49,7 +49,7 @@ export function Textarea({
   return (
     <label className="block">
       {label && (
-        <span className="mb-1.5 block text-xs uppercase tracking-widest text-muted">
+        <span className="mb-2 block text-[11px] font-medium uppercase tracking-[0.16em] text-muted">
           {label}
         </span>
       )}

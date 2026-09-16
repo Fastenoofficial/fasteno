@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_EMAIL_PATTERN,
+  AUTH_LOGIN_PASSWORD_MAX_LENGTH,
+  normalizeAuthEmail,
+} from "@/lib/auth-input";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { GoogleSignInButton } from "@/components/account/GoogleSignInButton";
@@ -19,11 +25,24 @@ export function LoginForm({ next }: { next: string }) {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    const normalizedEmail = normalizeAuthEmail(email);
+    if (
+      normalizedEmail.length > AUTH_EMAIL_MAX_LENGTH ||
+      !AUTH_EMAIL_PATTERN.test(normalizedEmail)
+    ) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (!password || password.length > AUTH_LOGIN_PASSWORD_MAX_LENGTH) {
+      setError("Incorrect email or password.");
+      return;
+    }
     setSubmitting(true);
 
     const supabase = createClient();
     const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: normalizedEmail,
       password,
     });
 
@@ -31,7 +50,7 @@ export function LoginForm({ next }: { next: string }) {
       setError(
         authError.message === "Invalid login credentials"
           ? "Incorrect email or password."
-          : authError.message,
+          : "Could not sign in right now. Please try again.",
       );
       setSubmitting(false);
       return;
@@ -51,6 +70,7 @@ export function LoginForm({ next }: { next: string }) {
           name="email"
           autoComplete="email"
           required
+          maxLength={AUTH_EMAIL_MAX_LENGTH}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
@@ -61,6 +81,7 @@ export function LoginForm({ next }: { next: string }) {
           name="password"
           autoComplete="current-password"
           required
+          maxLength={AUTH_LOGIN_PASSWORD_MAX_LENGTH}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••"

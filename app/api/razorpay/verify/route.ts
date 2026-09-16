@@ -3,15 +3,22 @@ import { isDemoMode } from "@/lib/config";
 import { sendOrderEmail, sendOwnerOrderAlert } from "@/lib/email";
 import { markOrderPaid } from "@/lib/orders";
 import { verifyRazorpaySignature } from "@/lib/razorpay";
+import {
+  clientIp,
+  rateLimit,
+  rateLimitKey,
+  RATE_LIMIT_MESSAGE,
+  RATE_LIMIT_UNAVAILABLE_MESSAGE,
+} from "@/lib/rate-limit";
+import { readBoundedJson } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 
-/** POST /api/razorpay/verify
- *  Body: { razorpay_order_id, razorpay_payment_id, razorpay_signature }
- *  Verifies HMAC-SHA256(order_id|payment_id, RAZORPAY_KEY_SECRET); on
- *  success marks the matching Supabase order paid. Invalid signature → 400.
- *  Idempotent alongside the webhook: whichever lands first flips the order
- *  (and sends the confirmation email); the other is a no-op. */
+const ORDER_ID_RE = /^order_[A-Za-z0-9]{6,40}$/;
+const PAYMENT_ID_RE = /^pay_[A-Za-z0-9]{6,40}$/;
+const SIGNATURE_RE = /^[0-9a-f]{64}$/i;
+
+/** Verify a browser callback, then persist capture state authoritatively. */
 export async function POST(request: Request) {
   if (isDemoMode) {
     return NextResponse.json(
@@ -20,48 +27,86 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  const body = await readBoundedJson<Record<string, unknown>>(request, {
+    maxBytes: 2 * 1024,
+  });
+  if (!body.ok) {
+    return NextResponse.json({ error: body.error }, { status: body.status });
   }
 
-  const b = (body ?? {}) as Record<string, unknown>;
   const razorpayOrderId =
-    typeof b.razorpay_order_id === "string" ? b.razorpay_order_id : "";
+    typeof body.value.razorpay_order_id === "string"
+      ? body.value.razorpay_order_id.trim()
+      : "";
   const razorpayPaymentId =
-    typeof b.razorpay_payment_id === "string" ? b.razorpay_payment_id : "";
+    typeof body.value.razorpay_payment_id === "string"
+      ? body.value.razorpay_payment_id.trim()
+      : "";
   const signature =
-    typeof b.razorpay_signature === "string" ? b.razorpay_signature : "";
+    typeof body.value.razorpay_signature === "string"
+      ? body.value.razorpay_signature.trim()
+      : "";
 
-  if (!verifyRazorpaySignature(razorpayOrderId, razorpayPaymentId, signature)) {
+  const limited = await rateLimit(
+    rateLimitKey("razorpay-verify", clientIp(request), razorpayOrderId),
+    { limit: 20, windowMs: 5 * 60_000, mode: "strict" },
+  );
+  if (!limited.ok) {
+    const unavailable = limited.outcome === "unavailable";
+    return NextResponse.json(
+      { error: unavailable ? RATE_LIMIT_UNAVAILABLE_MESSAGE : RATE_LIMIT_MESSAGE },
+      {
+        status: unavailable ? 503 : 429,
+        headers:
+          limited.outcome === "limited"
+            ? { "Retry-After": String(Math.ceil(limited.retryAfterMs / 1_000)) }
+            : undefined,
+      },
+    );
+  }
+
+  if (
+    !ORDER_ID_RE.test(razorpayOrderId) ||
+    !PAYMENT_ID_RE.test(razorpayPaymentId) ||
+    !SIGNATURE_RE.test(signature) ||
+    !verifyRazorpaySignature(razorpayOrderId, razorpayPaymentId, signature)
+  ) {
     return NextResponse.json(
       { error: "Payment signature verification failed." },
       { status: 400 },
     );
   }
 
-  const { persisted, alreadyPaid, order } = await markOrderPaid(
+  const { persisted, alreadyPaid, order, reason } = await markOrderPaid(
     razorpayOrderId,
     razorpayPaymentId,
   );
   if (!persisted) {
-    // Signature was genuine — the payment happened — but the DB update was
-    // blocked (no service-role key + guest session) or found no match.
-    console.error(
-      "razorpay/verify: signature ok but order not marked paid —",
-      razorpayOrderId,
+    const permanent =
+      reason === "amount_mismatch" ||
+      reason === "payment_id_mismatch" ||
+      reason === "payment_id_conflict" ||
+      reason === "order_cancelled" ||
+      reason === "invalid_state" ||
+      reason === "items_missing" ||
+      reason === "out_of_stock";
+    return NextResponse.json(
+      {
+        verified: true,
+        persisted: false,
+        reason: reason ?? "update_error",
+        error:
+          "Your payment was received, but order confirmation requires reconciliation. Please contact support before trying another payment.",
+      },
+      { status: permanent ? 409 : 503 },
     );
-  } else if (!alreadyPaid && order) {
-    // This call did the flip → confirmation + owner alert exactly once.
-    // AWAITED: Vercel freezes the function after the response, dropping
-    // un-awaited promises — emails must complete before we return.
+  }
+
+  if (!alreadyPaid && order) {
     await Promise.all([
       sendOrderEmail(order, "confirmation"),
       sendOwnerOrderAlert(order),
     ]);
   }
-
-  return NextResponse.json({ verified: true, persisted });
+  return NextResponse.json({ verified: true, persisted: true });
 }

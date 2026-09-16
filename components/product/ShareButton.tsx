@@ -3,27 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Link2, Share2 } from "lucide-react";
 
-/** PDP share control. Uses the native share sheet when the browser has
- *  one (navigator.share); otherwise opens a small popover with WhatsApp
- *  and copy-link actions. Shares the current URL — no props beyond the
- *  product name needed. Styled to sit beside the wishlist button. */
-
+/** Uses the native share sheet when available, otherwise exposes ordinary
+ *  keyboard-accessible WhatsApp and copy-link controls in a small popover. */
 export function ShareButton({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popoverId = "product-share-actions";
 
-  // Close the popover on outside click / Escape.
   useEffect(() => {
     if (!open) return;
-    const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("touchstart", onPointerDown);
@@ -37,8 +34,8 @@ export function ShareButton({ name }: { name: string }) {
 
   useEffect(() => {
     if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(t);
+    const timer = window.setTimeout(() => setCopied(false), 2_000);
+    return () => window.clearTimeout(timer);
   }, [copied]);
 
   async function handleClick() {
@@ -47,13 +44,13 @@ export function ShareButton({ name }: { name: string }) {
       try {
         await navigator.share({ title: name, text: name, url: href });
       } catch {
-        // sheet dismissed — nothing to do
+        // The native sheet was dismissed.
       }
       return;
     }
     setUrl(href);
     setCopied(false);
-    setOpen((o) => !o);
+    setOpen((current) => !current);
   }
 
   async function copyLink() {
@@ -61,40 +58,38 @@ export function ShareButton({ name }: { name: string }) {
       await navigator.clipboard.writeText(url || window.location.href);
       setCopied(true);
     } catch {
-      // clipboard unavailable — leave the WhatsApp option
+      // Clipboard unavailable — the WhatsApp option remains usable.
     }
   }
 
   const waHref = `https://wa.me/?text=${encodeURIComponent(`${name} — ${url}`)}`;
 
   return (
-    <div ref={wrapRef} className="relative inline-flex">
+    <div ref={wrapRef} className="relative flex w-full sm:w-auto">
       <button
         type="button"
         aria-label={`Share ${name}`}
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? popoverId : undefined}
         onClick={handleClick}
-        className="inline-flex items-center gap-2 border border-line px-5 py-3.5 text-sm uppercase tracking-wide text-muted transition-colors hover:border-gold hover:text-gold cursor-pointer"
+        className="inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-line bg-card px-4 py-3 text-sm uppercase tracking-wide text-muted shadow-sm transition-colors hover:border-gold hover:text-gold sm:w-auto"
       >
-        <Share2 size={16} />
+        <Share2 size={16} aria-hidden />
         Share
       </button>
 
       {open && (
         <div
-          role="menu"
-          className="absolute right-0 top-full z-20 mt-2 w-48 border border-line bg-card p-1 shadow-[0_10px_30px_rgba(26,28,28,0.1)]"
+          id={popoverId}
+          className="absolute right-0 top-full z-20 mt-2 w-48 rounded-xl border border-line-soft bg-card p-1 shadow-[var(--shadow-card-hover)]"
         >
           <a
-            role="menuitem"
             href={waHref}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setOpen(false)}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-ivory transition-colors hover:bg-surface"
+            className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-ivory transition-colors hover:bg-surface"
           >
-            {/* WhatsApp glyph */}
             <svg
               viewBox="0 0 24 24"
               width="14"
@@ -108,15 +103,14 @@ export function ShareButton({ name }: { name: string }) {
             WhatsApp
           </a>
           <button
-            role="menuitem"
             type="button"
             onClick={copyLink}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-ivory transition-colors hover:bg-surface cursor-pointer"
+            className="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 text-xs text-ivory transition-colors hover:bg-surface"
           >
             {copied ? (
-              <Check size={14} className="shrink-0 text-success" />
+              <Check size={14} aria-hidden className="shrink-0 text-success" />
             ) : (
-              <Link2 size={14} className="shrink-0 text-gold" />
+              <Link2 size={14} aria-hidden className="shrink-0 text-gold" />
             )}
             {copied ? "Copied" : "Copy link"}
           </button>

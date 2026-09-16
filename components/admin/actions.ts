@@ -69,8 +69,23 @@ function validateProduct(p: ProductFormInput): string | null {
   if (!p.color.trim()) return "Please enter the primary colour.";
   if (!Number.isInteger(p.stock) || p.stock < 0)
     return "Stock must be zero or more.";
+  if (p.featured && !p.active)
+    return "A featured product must also be active.";
   if (p.images.length === 0) return "Add at least one image path.";
   return null;
+}
+
+function revalidateProductCatalog(id: string, ...slugs: string[]) {
+  revalidatePath("/admin");
+  revalidatePath("/admin/products");
+  revalidatePath(`/admin/products/${id}`);
+  revalidatePath("/admin/featured");
+  revalidatePath("/admin/activity");
+  revalidatePath("/shop");
+  revalidatePath("/");
+  for (const slug of new Set(slugs.filter(Boolean))) {
+    revalidatePath(`/product/${slug}`);
+  }
 }
 
 export async function saveProduct(
@@ -79,6 +94,18 @@ export async function saveProduct(
 ): Promise<AdminActionResult> {
   const denied = await assertAdmin();
   if (denied) return { error: denied };
+
+  if (!Array.isArray(input.images) || input.images.length === 0) {
+    return { error: "Add at least one image path." };
+  }
+  const { normalizeImageSources } = await import("@/lib/image-security");
+  const normalizedImages = normalizeImageSources(input.images);
+  if (!normalizedImages) {
+    return {
+      error:
+        "Use 1 to 12 valid local image paths or approved HTTPS image URLs.",
+    };
+  }
 
   const invalid = validateProduct(input);
   if (invalid) return { error: invalid };
@@ -94,10 +121,12 @@ export async function saveProduct(
     .single();
   if (!category) return { error: "Unknown category." };
 
+  // Descriptive, pricing, stock, media, and SEO fields use the ordinary admin
+  // update. Category/active/featured fields are applied by one locked RPC below
+  // so their operational history and ordering changes are atomic.
   const row = {
     slug: input.slug.trim(),
     name: input.name.trim(),
-    category_id: category.id,
     price: input.price,
     compare_at_price: input.compareAtPrice,
     description: input.description.trim(),
@@ -106,10 +135,8 @@ export async function saveProduct(
     color: input.color.trim().toLowerCase(),
     pattern: input.pattern,
     tags: input.tags.map((t) => t.trim().toLowerCase()).filter(Boolean),
-    images: input.images.map((i) => i.trim()).filter(Boolean),
+    images: normalizedImages,
     stock: input.stock,
-    featured: input.featured,
-    active: input.active,
     country_of_origin: input.countryOfOrigin.trim() || "India",
     hsn_code: input.hsnCode.trim(),
     meta_title: input.metaTitle.trim(),
@@ -117,22 +144,62 @@ export async function saveProduct(
   };
 
   if (id) {
-    const { error } = await supabase.from("products").update(row).eq("id", id);
-    if (error)
+    const { data: current, error: currentError } = await supabase
+      .from("products")
+      .select("slug")
+      .eq("id", id)
+      .maybeSingle();
+    if (currentError || !current) {
+      return { error: "Could not load the product before saving." };
+    }
+
+    const { data: updated, error } = await supabase
+      .from("products")
+      .update(row)
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    if (error || !updated) {
       return {
         error:
-          error.code === "23505"
+          error?.code === "23505"
             ? "That slug is already in use."
             : "Could not save the product.",
       };
-    revalidatePath("/admin/products");
-    revalidatePath(`/admin/products/${id}`);
+    }
+
+    const { data: stateRows, error: stateError } = await supabase.rpc(
+      "admin_set_product_editor_state",
+      {
+        p_product_id: id,
+        p_category_id: category.id,
+        p_active: input.active,
+        p_featured: input.featured,
+      },
+    );
+    if (stateError || !((stateRows ?? []) as unknown[]).length) {
+      return {
+        error:
+          "Product details were saved, but its category or publication state could not be updated.",
+      };
+    }
+
+    revalidateProductCatalog(id, current.slug, input.slug.trim());
     return { ok: true, id };
   }
 
+  // Create a safe draft first. Migration 010 requires every authenticated
+  // product insert to be inactive/unfeatured; the locked migration-009 RPC
+  // then applies the requested publication state and records each transition.
+  // If that RPC fails, retain the non-commerce draft instead of hard-deleting
+  // a row whose relationships may already have changed.
   const { data, error } = await supabase
     .from("products")
-    .insert(row)
+    .insert({
+      ...row,
+      category_id: category.id,
+      active: false,
+    })
     .select("id")
     .single();
   if (error || !data)
@@ -142,75 +209,90 @@ export async function saveProduct(
           ? "That slug is already in use."
           : "Could not create the product.",
     };
-  revalidatePath("/admin/products");
+
+  const { data: stateRows, error: stateError } = await supabase.rpc(
+    "admin_set_product_editor_state",
+    {
+      p_product_id: data.id,
+      p_category_id: category.id,
+      p_active: input.active,
+      p_featured: input.featured,
+    },
+  );
+  if (stateError || !((stateRows ?? []) as unknown[]).length) {
+    console.error(
+      "product action: created draft state update failed —",
+      stateError?.message ?? "No product returned",
+    );
+    revalidateProductCatalog(data.id, input.slug.trim());
+    return {
+      error:
+        "Product was retained as an inactive draft because its publication state could not be applied.",
+      id: data.id,
+    };
+  }
+
+  revalidateProductCatalog(data.id, input.slug.trim());
   return { ok: true, id: data.id };
 }
 
-/** Duplicates a product row: name gets " (Copy)", the slug gets a unique
- *  "-copy"/"-copy-N" suffix, and the copy starts archived (active=false)
- *  so it never goes live by accident. */
+/** Duplicates a product through the locked database operation. The new row
+ *  receives a collision-safe "-copy" suffix and starts as an archived,
+ *  unfeatured, zero-stock draft with media and SEO fields reset. */
 export async function duplicateProduct(id: string): Promise<AdminActionResult> {
   const denied = await assertAdmin();
   if (denied) return { error: denied };
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return { error: "Product not found." };
+  }
 
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_duplicate_product", {
+    p_product_id: id,
+  });
+  const duplicated = (
+    (data ?? []) as Array<{ product_id: string; product_slug: string }>
+  )[0];
 
-  const { data: source } = await supabase
-    .from("products")
-    .select(
-      "slug, name, category_id, price, compare_at_price, description, details, material, color, pattern, tags, images, stock, featured, country_of_origin, hsn_code, meta_title, meta_description",
-    )
-    .eq("id", id)
-    .single();
-  if (!source) return { error: "Product not found." };
-
-  // Unique slug: <base>-copy, then <base>-copy-2, -copy-3, …
-  const baseSlug = source.slug.replace(/-copy(?:-\d+)?$/, "");
-  const { data: siblings } = await supabase
-    .from("products")
-    .select("slug")
-    .like("slug", `${baseSlug}-copy%`);
-  const taken = new Set((siblings ?? []).map((s) => s.slug));
-  let copySlug = `${baseSlug}-copy`;
-  for (let n = 2; taken.has(copySlug); n += 1) copySlug = `${baseSlug}-copy-${n}`;
-
-  const { data, error } = await supabase
-    .from("products")
-    .insert({
-      ...source,
-      slug: copySlug,
-      name: `${source.name} (Copy)`,
-      active: false,
-    })
-    .select("id")
-    .single();
-  if (error || !data)
+  if (error || !duplicated) {
     return {
       error:
-        error?.code === "23505"
-          ? "A copy with that slug already exists — try again."
+        error?.code === "P0002"
+          ? "Product not found."
           : "Could not duplicate the product.",
     };
+  }
 
-  revalidatePath("/admin/products");
-  return { ok: true, id: data.id };
+  revalidateProductCatalog(duplicated.product_id, duplicated.product_slug);
+  return { ok: true, id: duplicated.product_id };
 }
 
 export async function deleteProduct(id: string): Promise<AdminActionResult> {
   const denied = await assertAdmin();
   if (denied) return { error: denied };
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return { error: "Product not found." };
+  }
 
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  // archive rather than hard-delete (order_items may reference it)
-  const { error } = await supabase
-    .from("products")
-    .update({ active: false })
-    .eq("id", id);
-  if (error) return { error: "Could not archive the product." };
+  const { data, error } = await supabase.rpc("admin_manage_products", {
+    p_product_ids: [id],
+    p_operation: "archive",
+    p_category_id: null,
+  });
+  const archived = (
+    (data ?? []) as Array<{ product_id: string; product_slug: string }>
+  )[0];
 
-  revalidatePath("/admin/products");
+  if (error || !archived) {
+    return {
+      error: error?.code === "P0002" ? "Product not found." : "Could not archive the product.",
+    };
+  }
+
+  revalidateProductCatalog(archived.product_id, archived.product_slug);
   return { ok: true };
 }
 
@@ -484,11 +566,16 @@ export async function updateOrderTracking(
 
   const courier = input.courier.trim();
   const awbNumber = input.awbNumber.trim();
-  const trackingUrl = input.trackingUrl.trim();
+  const { normalizeOutboundUrl } = await import("@/lib/image-security");
+  const trackingUrl = normalizeOutboundUrl(input.trackingUrl, {
+    allowExternal: true,
+    optional: true,
+  });
   if (!courier) return { error: "Please choose or enter a courier." };
   if (!awbNumber) return { error: "Please enter the AWB number." };
-  if (trackingUrl && !/^https?:\/\//i.test(trackingUrl))
-    return { error: "Tracking URL must start with http(s)://." };
+  if (trackingUrl === null) {
+    return { error: "Tracking URL must be a safe local path or HTTPS URL." };
+  }
 
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();

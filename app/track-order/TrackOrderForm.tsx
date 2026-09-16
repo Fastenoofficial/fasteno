@@ -57,6 +57,7 @@ export function TrackOrderForm() {
           name="orderNumber"
           placeholder="FS-10023"
           autoComplete="off"
+          maxLength={10}
           required
         />
         <Input
@@ -65,6 +66,7 @@ export function TrackOrderForm() {
           type="email"
           placeholder="you@example.com"
           autoComplete="email"
+          maxLength={254}
           required
         />
         <Button type="submit" disabled={pending} className="sm:mb-0">

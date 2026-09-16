@@ -20,47 +20,49 @@ interface ShopClientProps {
 export default function ShopClient({
   products,
   options,
-  categories,
 }: ShopClientProps) {
   const searchParams = useSearchParams();
 
-  // Convert searchParams to ListingParams
   const params = useMemo(() => {
-    const sp: Record<string, string> = {};
+    const values: Record<string, string> = {};
     searchParams.forEach((value, key) => {
-      sp[key] = value;
+      values[key] = value;
     });
-    return parseListingParams(sp);
+    return parseListingParams(values);
   }, [searchParams]);
 
-  // Client-side filtering
   const filteredProducts = useMemo(() => {
     const query = toProductQuery(params);
     let result = [...products];
 
-    if (query.color) result = result.filter((p) => p.color === query.color);
-    if (query.material)
-      result = result.filter((p) => p.material === query.material);
-    if (query.pattern)
-      result = result.filter((p) => p.pattern === query.pattern);
-    if (query.tag) result = result.filter((p) => p.tags.includes(query.tag!));
-    if (typeof query.minPrice === "number")
-      result = result.filter((p) => p.price >= query.minPrice!);
-    if (typeof query.maxPrice === "number")
-      result = result.filter((p) => p.price <= query.maxPrice!);
+    if (query.color) result = result.filter((product) => product.color === query.color);
+    if (query.material) {
+      result = result.filter((product) => product.material === query.material);
+    }
+    if (query.pattern) {
+      result = result.filter((product) => product.pattern === query.pattern);
+    }
+    if (query.tag) {
+      result = result.filter((product) => product.tags.includes(query.tag!));
+    }
+    if (typeof query.minPrice === "number") {
+      result = result.filter((product) => product.price >= query.minPrice!);
+    }
+    if (typeof query.maxPrice === "number") {
+      result = result.filter((product) => product.price <= query.maxPrice!);
+    }
     if (query.query) {
       const needle = query.query.toLowerCase();
       result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(needle) ||
-          p.description.toLowerCase().includes(needle) ||
-          p.material.toLowerCase().includes(needle) ||
-          p.color.toLowerCase().includes(needle) ||
-          p.tags.some((t) => t.toLowerCase().includes(needle))
+        (product) =>
+          product.name.toLowerCase().includes(needle) ||
+          product.description.toLowerCase().includes(needle) ||
+          product.material.toLowerCase().includes(needle) ||
+          product.color.toLowerCase().includes(needle) ||
+          product.tags.some((tag) => tag.toLowerCase().includes(needle)),
       );
     }
 
-    // Apply sorting
     switch (query.sort) {
       case "price-asc":
         result = [...result].sort((a, b) => a.price - b.price);
@@ -71,13 +73,13 @@ export default function ShopClient({
       case "newest":
         result = [...result].sort(
           (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
         );
         break;
       case "featured":
       default:
         result = [...result].sort(
-          (a, b) => Number(b.featured) - Number(a.featured)
+          (a, b) => Number(b.featured) - Number(a.featured),
         );
     }
 
@@ -87,6 +89,7 @@ export default function ShopClient({
   return (
     <ProductListing
       basePath="/shop"
+      listContext="shop_all"
       products={filteredProducts}
       params={params}
       options={options}

@@ -29,6 +29,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { reaped } = await reapStalePendingRazorpayOrders();
-  return NextResponse.json({ ok: true, reaped });
+  const result = await reapStalePendingRazorpayOrders();
+  if (!result.ok) {
+    console.error(`cron/reap-orders: failed (${result.reason}).`);
+    return NextResponse.json(
+      { ok: false, error: "Order cleanup failed.", reaped: result.reaped },
+      { status: result.reason === "service_unavailable" ? 503 : 500 },
+    );
+  }
+  return NextResponse.json({ ok: true, reaped: result.reaped });
 }

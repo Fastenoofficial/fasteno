@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Pencil } from "lucide-react";
+import { LOW_STOCK_THRESHOLD } from "@/lib/admin-constants";
 import { formatINR, titleCase } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { DuplicateProductButton } from "@/components/admin/DuplicateProductButton";
@@ -134,7 +135,11 @@ export function ProductsTable({ products, categories }: ProductsTableProps) {
                 </td>
                 <td className="px-4 py-4">
                   <span
-                    className={p.stock <= 5 ? "text-danger" : "text-muted"}
+                    className={
+                      p.active && p.stock <= LOW_STOCK_THRESHOLD
+                        ? "text-danger"
+                        : "text-muted"
+                    }
                   >
                     {p.stock}
                   </span>

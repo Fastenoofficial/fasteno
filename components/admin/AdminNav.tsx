@@ -14,6 +14,8 @@ import {
   Users,
   Grid,
   Image,
+  Images,
+  History,
 } from "lucide-react";
 
 /** Pending-work counts shown as badges next to nav items. All optional —
@@ -30,11 +32,13 @@ const links = [
   { href: "/admin/categories", label: "Categories", icon: Grid },
   { href: "/admin/featured", label: "Featured", icon: Star },
   { href: "/admin/banners", label: "Banners", icon: Image },
+  { href: "/admin/media", label: "Media", icon: Images },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, countKey: "orders" as const },
   { href: "/admin/customers", label: "Customers", icon: Users },
   { href: "/admin/coupons", label: "Coupons", icon: Ticket },
   { href: "/admin/reviews", label: "Reviews", icon: Star, countKey: "reviews" as const },
   { href: "/admin/requests", label: "Requests", icon: Inbox, countKey: "requests" as const },
+  { href: "/admin/activity", label: "Activity", icon: History },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

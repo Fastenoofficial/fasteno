@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Banknote,
   CreditCard,
@@ -13,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { StorefrontImage } from "@/components/ui/StorefrontImage";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { saveLocalOrder } from "@/components/checkout/local-orders";
@@ -22,6 +22,7 @@ import {
   type RazorpayWidgetConfig,
 } from "@/components/checkout/razorpay-client";
 import { useCart } from "@/lib/cart-context";
+import { trackStorefrontEvent } from "@/lib/analytics-client";
 import { INDIAN_STATES } from "@/lib/constants";
 import {
   COD_MAX_TOTAL,
@@ -45,6 +46,28 @@ export interface AppliedCoupon {
   discount: number; // paise — always 0 for free_shipping
   /** `free_shipping` waives the shipping fee instead of discounting. */
   type?: CouponType;
+}
+
+interface GuestOrderCredentialResponse {
+  token: string;
+  expiresAt: string;
+}
+
+interface LiveCheckoutResponse {
+  mode: "cod" | "razorpay";
+  order: Order;
+  guestCredential: GuestOrderCredentialResponse | null;
+  razorpay?: RazorpayWidgetConfig;
+}
+
+function parseGuestCredential(value: unknown): GuestOrderCredentialResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const credential = value as Record<string, unknown>;
+  return typeof credential.token === "string" &&
+    /^[A-Za-z0-9_-]{43}$/.test(credential.token) &&
+    typeof credential.expiresAt === "string"
+    ? { token: credential.token, expiresAt: credential.expiresAt }
+    : null;
 }
 
 function parseCouponType(value: unknown): CouponType | undefined {
@@ -107,7 +130,6 @@ const methodCard = (active: boolean, disabled = false) =>
   }`;
 
 export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
-  const router = useRouter();
   const { items, subtotal, clearCart } = useCart();
 
   const defaultMethod: PaymentMethod = isDemoMode
@@ -127,6 +149,11 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
   const [pendingPayment, setPendingPayment] = useState<{
     order: Order;
     razorpay: RazorpayWidgetConfig;
+    guestCredential: GuestOrderCredentialResponse | null;
+  } | null>(null);
+  const [pendingAccess, setPendingAccess] = useState<{
+    order: Order;
+    guestCredential: GuestOrderCredentialResponse;
   } | null>(null);
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -183,10 +210,51 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
     return options;
   }, [codAllowed, codMessage]);
 
-  function finishOrder(order: Order) {
-    saveLocalOrder(order); // demo store / live guest courtesy cache
+  async function finishOrder(
+    order: Order,
+    guestCredential: GuestOrderCredentialResponse | null = null,
+  ) {
+    if (isDemoMode) saveLocalOrder(order);
+    if (!isDemoMode && order.userId === null && !guestCredential) {
+      throw new Error(
+        "Your order was saved, but secure access could not be established. Please contact support with your order number.",
+      );
+    }
+
+    if (guestCredential) {
+      setPendingAccess({ order, guestCredential });
+      const accessResponse = await fetch(
+        `/order/${encodeURIComponent(order.id)}/access`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: guestCredential.token }),
+        },
+      );
+      if (!accessResponse.ok) {
+        throw new Error(
+          "Your order was saved, but secure access could not be established. Please contact support with your order number.",
+        );
+      }
+      setPendingAccess(null);
+    }
+
+    trackStorefrontEvent({
+      type: "checkout_stage",
+      stage: "order_confirmed",
+      method: order.paymentMethod,
+    });
+    trackStorefrontEvent({
+      type: "purchase",
+      transactionId: order.id,
+      value: order.total,
+      items: order.items,
+    });
     clearCart();
-    router.push(`/order/${order.id}`);
+    // A full navigation unloads the analytics runtime before the private order
+    // page renders. Guest credentials have already moved into an HttpOnly
+    // cookie and never appear in the browser URL or history.
+    window.location.assign(`/order/${encodeURIComponent(order.id)}`);
   }
 
   /** Open the Razorpay widget for an already-created order and verify the
@@ -194,11 +262,17 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
   async function attemptPayment(pending: {
     order: Order;
     razorpay: RazorpayWidgetConfig;
+    guestCredential: GuestOrderCredentialResponse | null;
   }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
       let response: RazorpaySuccessResponse | null;
+      trackStorefrontEvent({
+        type: "checkout_stage",
+        stage: "payment_opened",
+        method: "razorpay",
+      });
       try {
         response = await openRazorpayCheckout(pending.razorpay, {
           onPaymentFailed: (message) => setSubmitError(message),
@@ -221,20 +295,34 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(response),
       });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData?.verified) {
+      const verifyData = (await verifyRes.json()) as {
+        verified?: boolean;
+        persisted?: boolean;
+        reason?: string;
+        error?: string;
+      };
+      if (!verifyRes.ok || verifyData.verified !== true || verifyData.persisted !== true) {
         throw new Error(
-          "We could not verify the payment. If money was deducted it will be refunded — please contact support.",
+          verifyData.error ??
+            "Your payment was received, but order confirmation is still being reconciled. Please contact support before trying another payment.",
         );
       }
 
-      setPendingPayment(null);
-      finishOrder({
-        ...pending.order,
-        paymentStatus: "paid",
-        status: "confirmed",
-        razorpayPaymentId: response.razorpay_payment_id,
+      trackStorefrontEvent({
+        type: "checkout_stage",
+        stage: "payment_verified",
+        method: "razorpay",
       });
+      setPendingPayment(null);
+      await finishOrder(
+        {
+          ...pending.order,
+          paymentStatus: "paid",
+          status: "confirmed",
+          razorpayPaymentId: response.razorpay_payment_id,
+        },
+        pending.guestCredential,
+      );
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : "Something went wrong. Please try again.",
@@ -260,6 +348,11 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
       return;
     }
 
+    trackStorefrontEvent({
+      type: "checkout_stage",
+      stage: "submitted",
+      method,
+    });
     setSubmitting(true);
     try {
       const phone = form.phone.replace(/\D/g, "");
@@ -285,21 +378,43 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
           couponCode: coupon?.code,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) {
-        throw new Error(data?.error ?? "Something went wrong. Please try again.");
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Something went wrong. Please try again.",
+        );
       }
 
-      if (data.mode === "demo" || data.mode === "cod") {
-        finishOrder(data.order as Order);
+      if (data.mode === "demo") {
+        await finishOrder(data.order as Order);
         return;
       }
+      if (data.mode !== "cod" && data.mode !== "razorpay") {
+        throw new Error("The checkout response was not recognized. Please try again.");
+      }
 
-      // Razorpay: remember the created order so the widget can be reopened
-      // (same razorpay order id) if the customer dismisses it.
+      const live = data as unknown as LiveCheckoutResponse;
+      const guestCredential = parseGuestCredential(live.guestCredential);
+      if (live.order.userId === null && !guestCredential) {
+        throw new Error(
+          "Your order was saved, but secure access could not be established. Please contact support with your order number.",
+        );
+      }
+      if (live.mode === "cod") {
+        await finishOrder(live.order, guestCredential);
+        return;
+      }
+      if (!live.razorpay) {
+        throw new Error("Could not start the payment. Please try again.");
+      }
+
+      // Keep the credential only in component memory; never in Order or storage.
       const pending = {
-        order: data.order as Order,
-        razorpay: data.razorpay as RazorpayWidgetConfig,
+        order: live.order,
+        razorpay: live.razorpay,
+        guestCredential,
       };
       setPendingPayment(pending);
       await attemptPayment(pending);
@@ -312,7 +427,26 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
     }
   }
 
-  const awaitingRetry = pendingPayment !== null && !submitting;
+  async function retryOrderAccess() {
+    if (!pendingAccess) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await finishOrder(pendingAccess.order, pendingAccess.guestCredential);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Secure order access is temporarily unavailable. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const awaitingAccess = pendingAccess !== null && !submitting;
+  const awaitingRetry =
+    pendingAccess === null && pendingPayment !== null && !submitting;
 
   return (
     <form onSubmit={handleSubmit} noValidate>
@@ -434,7 +568,13 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
                 value={opt.value}
                 checked={method === opt.value}
                 disabled={opt.disabled}
-                onChange={() => setMethod(opt.value)}
+                onChange={() => {
+                  setMethod(opt.value);
+                  trackStorefrontEvent({
+                    type: "payment_method",
+                    method: opt.value,
+                  });
+                }}
                 className="sr-only"
               />
               <span
@@ -472,8 +612,26 @@ export function CheckoutForm({ coupon }: { coupon: AppliedCoupon | null }) {
         </p>
       )}
 
-      {/* ── Payment not completed → explicit retry for the same order ── */}
-      {awaitingRetry ? (
+      {awaitingAccess ? (
+        <div className="mt-6 border border-gold/50 bg-surface p-5">
+          <p className="text-sm font-medium text-gold">Order saved securely</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            We could not open your private confirmation page yet. Retry the
+            secure access step; this will not place or charge another order.
+          </p>
+          <div className="mt-4">
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() => void retryOrderAccess()}
+            >
+              <RotateCcw size={16} />
+              Retry secure access
+            </Button>
+          </div>
+        </div>
+      ) : awaitingRetry ? (
         <div className="mt-6 border border-gold/50 bg-surface p-5">
           <p className="text-sm font-medium text-gold">Payment not completed</p>
           <p className="mt-1 text-xs leading-relaxed text-muted">
@@ -630,14 +788,13 @@ function CheckoutSummaryView({
         {items.map((item) => (
           <li key={item.productId} className="flex items-center gap-3">
             <div className="relative h-14 w-14 shrink-0 overflow-hidden border border-line bg-card">
-              {item.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="h-full w-full object-cover"
-                />
-              )}
+              <StorefrontImage
+                src={item.image}
+                alt={item.name}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs text-ivory">{item.name}</p>

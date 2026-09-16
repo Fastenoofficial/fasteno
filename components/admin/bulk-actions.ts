@@ -3,137 +3,133 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
+import { MAX_ADMIN_BULK_PRODUCTS } from "@/lib/admin-constants";
 import { createClient } from "@/lib/supabase/server";
 
-export async function bulkDeleteProducts(productIds: string[]) {
+type ProductOperation =
+  | "archive"
+  | "activate"
+  | "deactivate"
+  | "feature"
+  | "unfeature"
+  | "category_change";
+
+interface OperationRow {
+  product_id: string;
+  product_slug: string;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validSelection(productIds: string[]): boolean {
+  return (
+    Array.isArray(productIds) &&
+    productIds.length > 0 &&
+    productIds.length <= MAX_ADMIN_BULK_PRODUCTS &&
+    productIds.every((id) => UUID_PATTERN.test(id)) &&
+    new Set(productIds).size === productIds.length
+  );
+}
+
+async function applyProductOperation(
+  productIds: string[],
+  operation: ProductOperation,
+  errorMessage: string,
+  categoryId: string | null = null,
+): Promise<OperationRow[]> {
   await requireAdmin();
-  const supabase = await createClient();
 
-  const { error } = await supabase
-    .from("products")
-    .delete()
-    .in("id", productIds);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
+  if (!validSelection(productIds)) {
+    redirect(
+      `/admin/products?error=${encodeURIComponent(
+        `Select between 1 and ${MAX_ADMIN_BULK_PRODUCTS} valid, unique products.`,
+      )}`,
+    );
+  }
+  if (operation === "category_change" && (!categoryId || !UUID_PATTERN.test(categoryId))) {
+    redirect(
+      `/admin/products?error=${encodeURIComponent("Choose a valid destination category.")}`,
+    );
   }
 
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_manage_products", {
+    p_product_ids: productIds,
+    p_operation: operation,
+    p_category_id: categoryId,
+  });
+  const rows = (data ?? []) as OperationRow[];
+
+  if (error || rows.length !== productIds.length) {
+    redirect(`/admin/products?error=${encodeURIComponent(errorMessage)}`);
+  }
+
+  revalidatePath("/admin");
   revalidatePath("/admin/products");
+  revalidatePath("/admin/featured");
+  revalidatePath("/admin/activity");
   revalidatePath("/shop");
-  redirect(`/admin/products?deleted=${productIds.length}`);
+  revalidatePath("/");
+  for (const row of rows) revalidatePath(`/product/${row.product_slug}`);
+
+  return rows;
+}
+
+export async function bulkArchiveProducts(productIds: string[]) {
+  const rows = await applyProductOperation(
+    productIds,
+    "archive",
+    "Unable to archive the selected products.",
+  );
+  redirect(`/admin/products?archived=${rows.length}`);
 }
 
 export async function bulkActivateProducts(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ active: true })
-    .in("id", productIds);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath("/admin/products");
-  revalidatePath("/shop");
-  redirect(`/admin/products?activated=${productIds.length}`);
+  const rows = await applyProductOperation(
+    productIds,
+    "activate",
+    "Unable to activate the selected products.",
+  );
+  redirect(`/admin/products?activated=${rows.length}`);
 }
 
 export async function bulkDeactivateProducts(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ active: false })
-    .in("id", productIds);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath("/admin/products");
-  revalidatePath("/shop");
-  redirect(`/admin/products?deactivated=${productIds.length}`);
+  const rows = await applyProductOperation(
+    productIds,
+    "deactivate",
+    "Unable to deactivate the selected products.",
+  );
+  redirect(`/admin/products?deactivated=${rows.length}`);
 }
 
 export async function bulkFeatureProducts(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  // Get current max featured_order
-  const { data: maxData } = await supabase
-    .from("products")
-    .select("featured_order")
-    .eq("featured", true)
-    .order("featured_order", { ascending: false })
-    .limit(1);
-
-  const startOrder = maxData && maxData[0] ? maxData[0].featured_order + 1 : 0;
-
-  const { error } = await supabase
-    .from("products")
-    .update({ featured: true })
-    .in("id", productIds);
-
-  // Update featured_order for each product
-  const updates = productIds.map((id, index) =>
-    supabase
-      .from("products")
-      .update({ featured_order: startOrder + index })
-      .eq("id", id)
+  const rows = await applyProductOperation(
+    productIds,
+    "feature",
+    "Unable to feature the selected active products.",
   );
-
-  await Promise.all(updates);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/featured");
-  revalidatePath("/");
-  redirect(`/admin/products?featured=${productIds.length}`);
+  redirect(`/admin/products?featured=${rows.length}`);
 }
 
 export async function bulkUnfeatureProducts(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ featured: false, featured_order: 0 })
-    .in("id", productIds);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath("/admin/products");
-  revalidatePath("/admin/featured");
-  revalidatePath("/");
-  redirect(`/admin/products?unfeatured=${productIds.length}`);
+  const rows = await applyProductOperation(
+    productIds,
+    "unfeature",
+    "Unable to unfeature the selected products.",
+  );
+  redirect(`/admin/products?unfeatured=${rows.length}`);
 }
 
 export async function bulkChangeCategoryProducts(
   productIds: string[],
-  categoryId: string
+  categoryId: string,
 ) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ category_id: categoryId })
-    .in("id", productIds);
-
-  if (error) {
-    redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath("/admin/products");
-  revalidatePath("/shop");
-  redirect(`/admin/products?categorized=${productIds.length}`);
+  const rows = await applyProductOperation(
+    productIds,
+    "category_change",
+    "Unable to change the category for the selected products.",
+    categoryId,
+  );
+  redirect(`/admin/products?categorized=${rows.length}`);
 }

@@ -36,33 +36,53 @@ const companyLinks = [
 ];
 
 const socialLinks = [
-  { href: "https://instagram.com/fastenoshyama", label: "Instagram", Icon: Instagram },
-  { href: "https://facebook.com/fastenoshyama", label: "Facebook", Icon: Facebook },
-  { href: "https://x.com/fastenoshyama", label: "X (Twitter)", Icon: Twitter },
-  { href: "https://youtube.com/@fastenoshyama", label: "YouTube", Icon: Youtube },
+  {
+    href: "https://instagram.com/fastenoshyama",
+    label: "Instagram",
+    Icon: Instagram,
+  },
+  {
+    href: "https://facebook.com/fastenoshyama",
+    label: "Facebook",
+    Icon: Facebook,
+  },
+  {
+    href: "https://x.com/fastenoshyama",
+    label: "X (Twitter)",
+    Icon: Twitter,
+  },
+  {
+    href: "https://youtube.com/@fastenoshyama",
+    label: "YouTube",
+    Icon: Youtube,
+  },
 ];
 
 export function Footer() {
   return (
-    <footer className="bg-block text-block-text">
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+    <footer className="relative overflow-hidden bg-block text-block-text">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-40 top-0 h-96 w-96 rounded-full bg-gold-light/[0.06] blur-3xl"
+      />
+      <div className="relative mx-auto grid max-w-[90rem] gap-10 px-4 py-16 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1.4fr_repeat(3,1fr)] lg:gap-14 lg:px-8 lg:py-20">
         {/* brand */}
         <div>
           <img
             src="/branding/fasteno-logo.png"
             alt="Fasteno.in"
-            className="h-10 w-auto mb-4"
+            className="mb-4 h-10 w-auto brightness-0 invert"
           />
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-block-text/65">
+          <p className="mt-4 max-w-xs text-sm leading-relaxed text-block-text/62">
             {SITE_TAGLINE} Ties, cufflinks, brooches, pocket squares and
             buttons — curated for the well-finished man.
           </p>
-          <p className="mt-4 text-sm text-block-text/65">
+          <p className="mt-4 text-sm text-block-text/62">
             {SUPPORT_EMAIL}
             <br />
             {SUPPORT_PHONE}
           </p>
-          <ul className="mt-5 flex items-center gap-4">
+          <ul className="mt-6 flex items-center gap-2">
             {socialLinks.map(({ href, label, Icon }) => (
               <li key={label}>
                 <a
@@ -70,9 +90,9 @@ export function Footer() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={label}
-                  className="text-block-text/65 transition-colors hover:text-gold-light"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-block-text/65 transition-colors hover:border-gold-light/40 hover:bg-white/10 hover:text-gold-light"
                 >
-                  <Icon size={17} aria-hidden />
+                  <Icon size={16} aria-hidden />
                 </a>
               </li>
             ))}
@@ -86,15 +106,15 @@ export function Footer() {
           { title: "Company", links: companyLinks },
         ].map((col) => (
           <div key={col.title}>
-            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-gold-light">
+            <p className="mb-5 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-light">
               {col.title}
             </p>
-            <ul className="space-y-2.5">
+            <ul className="space-y-3">
               {col.links.map((l) => (
                 <li key={l.href}>
                   <Link
                     href={l.href}
-                    className="text-sm text-block-text/65 transition-colors hover:text-gold-light"
+                    className="rounded-sm text-sm text-block-text/62 transition-colors hover:text-gold-light"
                   >
                     {l.label}
                   </Link>
@@ -107,9 +127,10 @@ export function Footer() {
 
       {/* legal / compliance — Consumer Protection (E-Commerce) Rules, 2020 */}
       <div className="border-t border-white/10">
-        <div className="mx-auto max-w-7xl space-y-1.5 px-4 py-6 text-[11px] leading-relaxed text-block-text/50 sm:px-6">
+        <div className="mx-auto max-w-[90rem] space-y-1.5 px-4 py-6 text-[11px] leading-relaxed text-block-text/50 sm:px-6 lg:px-8">
           <p>
-            Sold by <span className="text-block-text/70">{LEGAL_ENTITY_NAME}</span> ·{" "}
+            Sold by{" "}
+            <span className="text-block-text/70">{LEGAL_ENTITY_NAME}</span> ·{" "}
             {LEGAL_ADDRESS}
           </p>
           <p>
@@ -139,7 +160,7 @@ export function Footer() {
       </div>
 
       <div className="border-t border-white/10">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-block-text/55 sm:flex-row sm:px-6">
+        <div className="mx-auto flex max-w-[90rem] flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-block-text/50 sm:flex-row sm:px-6 lg:px-8">
           <p>
             © {new Date().getFullYear()} {SITE_NAME}. All rights reserved.
           </p>

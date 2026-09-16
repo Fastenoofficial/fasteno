@@ -12,7 +12,7 @@ export default function CheckoutPage() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
       {isDemoMode && (
-        <div className="mb-8 flex items-start gap-3 border border-gold/50 bg-surface px-5 py-4">
+        <div className="mb-8 flex items-start gap-3 rounded-2xl border border-gold-light/50 bg-card px-5 py-4 shadow-[var(--shadow-card)]">
           <FlaskConical size={18} className="mt-0.5 shrink-0 text-gold" />
           <div>
             <p className="text-sm font-medium text-gold">

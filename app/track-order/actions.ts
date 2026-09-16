@@ -1,13 +1,17 @@
 "use server";
 
+import { headers } from "next/headers";
 import { isDemoMode } from "@/lib/config";
+import { normalizeOutboundUrl } from "@/lib/image-security";
+import {
+  clientIp,
+  rateLimit,
+  rateLimitKey,
+  RATE_LIMIT_MESSAGE,
+  RATE_LIMIT_UNAVAILABLE_MESSAGE,
+} from "@/lib/rate-limit";
+import { createServiceClient } from "@/lib/supabase/service";
 import type { OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
-
-/** Guest order tracking lookup.
- *  Auth model: the order number AND the email on the order must BOTH match —
- *  that pair is the shared secret. Guests cannot SELECT orders under RLS, so
- *  the lookup uses the service-role client and returns only non-sensitive
- *  status fields (never the address or line items). */
 
 export interface TrackedOrder {
   orderNumber: string;
@@ -15,7 +19,7 @@ export interface TrackedOrder {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
   createdAt: string;
-  total: number; // paise
+  total: number;
   courier: string | null;
   awbNumber: string | null;
   trackingUrl: string | null;
@@ -26,8 +30,12 @@ export interface TrackOrderState {
   error: string | null;
 }
 
-const ORDER_NUMBER_RE = /^FS-\d{4,7}$/i;
+const ORDER_NUMBER_RE = /^FS-\d{4,7}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const TRACK_ORDER_MAX_LENGTH = 10;
+const TRACK_EMAIL_MAX_LENGTH = 254;
+const NOT_FOUND_MESSAGE =
+  "No order was found for those details. Check your confirmation email and try again.";
 
 interface TrackRow {
   order_number: string;
@@ -36,32 +44,28 @@ interface TrackRow {
   payment_method: PaymentMethod;
   created_at: string;
   total: number;
-  courier?: string | null;
-  awb_number?: string | null;
-  tracking_url?: string | null;
+  courier: string | null;
+  awb_number: string | null;
+  tracking_url: string | null;
+}
+
+function limiterError(
+  result: Awaited<ReturnType<typeof rateLimit>>,
+): TrackOrderState | null {
+  if (result.ok) return null;
+  return {
+    order: null,
+    error:
+      result.outcome === "unavailable"
+        ? RATE_LIMIT_UNAVAILABLE_MESSAGE
+        : RATE_LIMIT_MESSAGE,
+  };
 }
 
 export async function trackOrder(
   _prev: TrackOrderState,
   formData: FormData,
 ): Promise<TrackOrderState> {
-  const orderNumber = String(formData.get("orderNumber") ?? "")
-    .trim()
-    .toUpperCase();
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-
-  if (!ORDER_NUMBER_RE.test(orderNumber)) {
-    return {
-      order: null,
-      error: "Please enter a valid order number (e.g. FS-10023).",
-    };
-  }
-  if (!EMAIL_RE.test(email)) {
-    return { order: null, error: "Please enter a valid email address." };
-  }
-
   if (isDemoMode) {
     return {
       order: null,
@@ -70,62 +74,60 @@ export async function trackOrder(
     };
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const requestHeaders = await headers();
+  const ip = clientIp(requestHeaders);
+  const ipLimit = await rateLimit(rateLimitKey("track-order-ip", ip), {
+    limit: 20,
+    windowMs: 10 * 60_000,
+    mode: "strict",
+  });
+  const ipError = limiterError(ipLimit);
+  if (ipError) return ipError;
 
-  let rows: TrackRow[] | null = null;
-
-  if (url && serviceKey) {
-    // Service client — bypasses RLS so guest orders are findable. Safe here
-    // because both order number and email must match, and we only return
-    // status fields.
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(url, serviceKey, {
-      auth: { persistSession: false },
-    });
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("order_number", orderNumber)
-      .eq("email", email)
-      .limit(1);
-    if (error) {
-      console.error("track-order: lookup failed —", error.message);
-      return {
-        order: null,
-        error: "Could not look up the order right now. Please try again.",
-      };
-    }
-    rows = data as TrackRow[] | null;
-  } else {
-    // No service key — fall back to the session client (works for signed-in
-    // owners and admins; guest rows are invisible under RLS).
-    const { createClient } = await import("@/lib/supabase/server");
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("order_number", orderNumber)
-      .eq("email", email)
-      .limit(1);
-    if (error) {
-      console.error("track-order: lookup failed —", error.message);
-      return {
-        order: null,
-        error: "Could not look up the order right now. Please try again.",
-      };
-    }
-    rows = data as TrackRow[] | null;
+  const rawOrder = formData.get("orderNumber");
+  const rawEmail = formData.get("email");
+  if (typeof rawOrder !== "string" || typeof rawEmail !== "string") {
+    return { order: null, error: NOT_FOUND_MESSAGE };
+  }
+  const orderNumber = rawOrder.normalize("NFKC").trim().toUpperCase();
+  const email = rawEmail.normalize("NFKC").trim().toLowerCase();
+  if (
+    orderNumber.length > TRACK_ORDER_MAX_LENGTH ||
+    email.length > TRACK_EMAIL_MAX_LENGTH ||
+    !ORDER_NUMBER_RE.test(orderNumber) ||
+    !EMAIL_RE.test(email)
+  ) {
+    return { order: null, error: NOT_FOUND_MESSAGE };
   }
 
-  const row = rows?.[0];
-  if (!row) {
-    return {
-      order: null,
-      error:
-        "No order found for that order number and email. Check both against your confirmation email and try again.",
-    };
+  const targetLimit = await rateLimit(
+    rateLimitKey("track-order-target", orderNumber, email),
+    { limit: 8, windowMs: 15 * 60_000, mode: "strict" },
+  );
+  const targetError = limiterError(targetLimit);
+  if (targetError) return targetError;
+
+  const service = createServiceClient();
+  if (!service) {
+    return { order: null, error: RATE_LIMIT_UNAVAILABLE_MESSAGE };
   }
+
+  const { data, error } = await service
+    .from("orders")
+    .select(
+      "order_number, status, payment_status, payment_method, created_at, total, courier, awb_number, tracking_url",
+    )
+    .is("user_id", null)
+    .eq("order_number", orderNumber)
+    .eq("email", email)
+    .limit(1);
+  if (error) {
+    console.error("track-order: guest lookup unavailable —", error.message);
+    return { order: null, error: RATE_LIMIT_UNAVAILABLE_MESSAGE };
+  }
+
+  const row = (data?.[0] as TrackRow | undefined) ?? null;
+  if (!row) return { order: null, error: NOT_FOUND_MESSAGE };
 
   return {
     error: null,
@@ -136,9 +138,12 @@ export async function trackOrder(
       paymentMethod: row.payment_method,
       createdAt: row.created_at,
       total: row.total,
-      courier: row.courier ?? null,
-      awbNumber: row.awb_number ?? null,
-      trackingUrl: row.tracking_url ?? null,
+      courier: row.courier,
+      awbNumber: row.awb_number,
+      trackingUrl: normalizeOutboundUrl(row.tracking_url, {
+        allowExternal: true,
+        optional: true,
+      }) || null,
     },
   };
 }

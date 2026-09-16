@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/Badge";
+import { StorefrontImage } from "@/components/ui/StorefrontImage";
 import { GST_RATE } from "@/lib/config";
 import { formatDate, formatINR } from "@/lib/format";
 import type { OrderExtras } from "@/lib/orders";
@@ -44,14 +45,13 @@ export function OrderView({ order }: { order: OrderLike }) {
                 className="flex items-center gap-4 border-b border-line px-5 py-4 last:border-b-0"
               >
                 <div className="h-16 w-16 shrink-0 overflow-hidden border border-line bg-card">
-                  {item.image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="h-full w-full object-cover"
-                    />
-                  )}
+                  <StorefrontImage
+                    src={item.image}
+                    alt={item.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ivory">{item.name}</p>

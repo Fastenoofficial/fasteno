@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { InvoiceView } from "@/components/checkout/InvoiceView";
 import { InvoiceActions } from "@/components/checkout/InvoiceActions";
 import { InvoiceLocalView } from "@/components/checkout/InvoiceLocalView";
 import { isDemoMode } from "@/lib/config";
+import { readGuestOrderCredential } from "@/lib/guest-order-access";
 import { buildInvoiceData } from "@/lib/invoice";
 import { getSupabaseOrder } from "@/lib/orders";
 
@@ -28,14 +30,14 @@ export default async function InvoicePage({
   if (isDemoMode) {
     content = <InvoiceLocalView id={id} />;
   } else {
-    const order = await getSupabaseOrder(id);
-    content = order ? (
+    const guestToken = await readGuestOrderCredential(id);
+    const order = await getSupabaseOrder(id, { guestToken });
+    if (!order) notFound();
+    content = (
       <>
         <InvoiceActions orderId={order.id} />
         <InvoiceView data={buildInvoiceData(order)} />
       </>
-    ) : (
-      <InvoiceLocalView id={id} />
     );
   }
 

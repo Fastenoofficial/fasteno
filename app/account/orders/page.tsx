@@ -4,6 +4,7 @@ import { isDemoMode } from "@/lib/config";
 import { mapOrderRow, requireUser, type OrderRow } from "@/lib/auth";
 import { formatDate, formatINR } from "@/lib/format";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StorefrontImage } from "@/components/ui/StorefrontImage";
 import { DemoNotice } from "@/components/account/DemoNotice";
 import {
   OrderActions,
@@ -101,14 +102,13 @@ export default async function OrdersPage() {
           <ul className="divide-y divide-line px-5">
             {order.items.map((item, i) => (
               <li key={`${order.id}-${i}`} className="flex items-center gap-4 py-3">
-                {item.image && (
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    loading="lazy"
-                    className="h-14 w-11 shrink-0 border border-line bg-surface object-cover"
-                  />
-                )}
+                <StorefrontImage
+                  src={item.image}
+                  alt={item.name}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-14 w-11 shrink-0 border border-line bg-surface object-cover"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ivory">{item.name}</p>
                   <p className="text-xs text-muted">

@@ -12,6 +12,10 @@ import { FREE_SHIPPING_THRESHOLD, isShiprocketConfigured } from "@/lib/config";
 import { Badge } from "@/components/ui/Badge";
 import { PriceTag } from "@/components/ui/PriceTag";
 import { ProductCard } from "@/components/ui/ProductCard";
+import {
+  ProductListAnalytics,
+  ProductViewAnalytics,
+} from "@/lib/analytics-client";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ProductGallery } from "@/components/catalog/ProductGallery";
 import { AddToCartPanel } from "@/components/catalog/AddToCartPanel";
@@ -20,7 +24,6 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { ReviewsSection } from "@/components/reviews/ReviewsSection";
 import { Stars } from "@/components/reviews/Stars";
 import { getProductRating, getProductReviews } from "@/components/reviews/data";
-import { ShareButton } from "@/components/product/ShareButton";
 import { DeliveryEstimate } from "@/components/product/DeliveryEstimate";
 import { DeliveryCheck } from "@/components/product/DeliveryCheck";
 import { RecentlyViewed } from "@/components/product/RecentlyViewed";
@@ -50,7 +53,7 @@ export async function generateMetadata({
 
 const LOW_STOCK_AT = 5;
 
-// Pre-generate all product pages at build time
+// Pre-generate all product pages at build time.
 export async function generateStaticParams() {
   const { getAllProducts } = await import("@/lib/catalog");
   const products = await getAllProducts();
@@ -59,24 +62,22 @@ export async function generateStaticParams() {
   }));
 }
 
-// Revalidate every 5 minutes - balance between freshness and speed
+// Revalidate every 5 minutes — balance between freshness and speed.
 export const revalidate = 300;
 export const dynamicParams = true;
-export const dynamic = 'force-static';
+export const dynamic = "force-static";
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
   if (!product) notFound();
 
-  // rating is fetched ONCE and shared by the JSON-LD + reviews section
+  // Rating is fetched once and shared by JSON-LD and the reviews section.
   const [category, related, rating] = await Promise.all([
     getCategoryBySlug(product.category),
     getRelatedProducts(product, 4),
     getProductRating(product.id),
   ]);
-  // Review items for the Product JSON-LD — skipped entirely while the
-  // product has no approved reviews (today's common case).
   const jsonLdReviews =
     rating.count > 0 ? await getProductReviews(product.id) : [];
   const categoryName = category?.name ?? titleCase(product.category);
@@ -85,8 +86,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const lowStock = !outOfStock && product.stock <= LOW_STOCK_AT;
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16">
+    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 md:py-16">
       <ProductJsonLd product={product} rating={rating} reviews={jsonLdReviews} />
+      <ProductViewAnalytics product={product} />
       <BreadcrumbJsonLd
         items={[
           { name: "Home", url: "/" },
@@ -95,8 +97,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
           { name: product.name, url: `/product/${product.slug}` },
         ]}
       />
-      {/* breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="mb-8">
+
+      <nav aria-label="Breadcrumb" className="mb-6 sm:mb-8">
         <ol className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.14em] text-muted">
           <li>
             <Link href="/" className="transition-colors hover:text-gold">
@@ -125,12 +127,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
         </ol>
       </nav>
 
-      <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.04fr)_minmax(0,0.96fr)] lg:gap-14">
         <ProductGallery images={product.images} name={product.name} />
 
-        <div className="flex flex-col">
+        <div className="flex min-w-0 flex-col">
           <p className="eyebrow mb-3">{categoryName}</p>
-          <h1 className="font-display text-3xl leading-tight text-ivory md:text-4xl">
+          <h1 className="break-words font-display text-3xl leading-tight text-ivory md:text-4xl">
             {product.name}
           </h1>
 
@@ -149,9 +151,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
               <Badge tone="success">In stock</Badge>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted">
-            Inclusive of all taxes
-          </p>
+          <p className="mt-1 text-xs text-muted">Inclusive of all taxes</p>
 
           {rating.count > 0 && (
             <a
@@ -170,8 +170,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             {product.description}
           </p>
 
-          {/* material / colour / pattern */}
-          <dl className="mt-6 grid grid-cols-3 gap-px border border-line bg-line">
+          <dl className="mt-6 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-line-soft bg-line sm:grid-cols-3">
             {(
               [
                 ["Material", titleCase(product.material)],
@@ -179,11 +178,11 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 ["Pattern", titleCase(product.pattern)],
               ] as const
             ).map(([label, value]) => (
-              <div key={label} className="bg-card px-4 py-3">
+              <div key={label} className="min-w-0 bg-card px-4 py-3">
                 <dt className="text-[10px] uppercase tracking-[0.18em] text-muted">
                   {label}
                 </dt>
-                <dd className="mt-1 text-sm text-ivory">{value}</dd>
+                <dd className="mt-1 break-words text-sm text-ivory">{value}</dd>
               </div>
             ))}
           </dl>
@@ -191,7 +190,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
             Country of origin: <span className="text-ivory">India</span>
           </p>
 
-          {/* tags */}
           {product.tags.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
               {product.tags.map((tag) => (
@@ -204,8 +202,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
           <div className="mt-8 space-y-4">
             <AddToCartPanel product={product} />
-            {/* share sits alongside the wishlist control above */}
-            <ShareButton name={product.name} />
             <DeliveryEstimate />
             {isShiprocketConfigured && <DeliveryCheck />}
             <Link
@@ -225,7 +221,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
             </Link>
           </div>
 
-          {/* craft details */}
           {product.details.length > 0 && (
             <div className="mt-10 border-t border-line pt-6">
               <h2 className="text-xs uppercase tracking-[0.18em] text-gold">
@@ -237,7 +232,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
                     key={detail}
                     className="flex gap-3 text-sm leading-relaxed text-muted"
                   >
-                    <span aria-hidden className="mt-2 h-px w-4 shrink-0 bg-gold/60" />
+                    <span
+                      aria-hidden
+                      className="mt-2 h-px w-4 shrink-0 bg-gold/60"
+                    />
                     {detail}
                   </li>
                 ))}
@@ -245,30 +243,38 @@ export default async function ProductPage({ params }: ProductPageProps) {
             </div>
           )}
 
-          {/* delivery & returns */}
-          <div className="mt-8 space-y-3 border border-line bg-surface p-5">
+          <div className="mt-8 space-y-3 rounded-2xl border border-line-soft bg-card p-5 shadow-[var(--shadow-card)]">
             <p className="flex items-start gap-3 text-sm text-muted">
-              <Truck size={16} className="mt-0.5 shrink-0 text-gold" />
-              Free shipping on orders over{" "}
-              {formatINR(FREE_SHIPPING_THRESHOLD)} · delivered across India in
-              3–7 working days.
+              <Truck
+                size={16}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-gold"
+              />
+              Free shipping on orders over {formatINR(FREE_SHIPPING_THRESHOLD)} ·
+              delivered across India in 3–7 working days.
             </p>
             <p className="flex items-start gap-3 text-sm text-muted">
-              <RotateCcw size={16} className="mt-0.5 shrink-0 text-gold" />
+              <RotateCcw
+                size={16}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-gold"
+              />
               7-day easy returns on unworn pieces in original packaging.
             </p>
             <p className="flex items-start gap-3 text-sm text-muted">
-              <ShieldCheck size={16} className="mt-0.5 shrink-0 text-gold" />
+              <ShieldCheck
+                size={16}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-gold"
+              />
               Secure payment — UPI, cards, netbanking &amp; Cash on Delivery.
             </p>
           </div>
         </div>
       </div>
 
-      {/* customer reviews */}
       <ReviewsSection product={product} rating={rating} />
 
-      {/* related products */}
       {related.length > 0 && (
         <div className="mt-20 border-t border-line pt-14">
           <SectionHeading
@@ -276,15 +282,20 @@ export default async function ProductPage({ params }: ProductPageProps) {
             title="Pairs Well With"
             description="Pieces chosen to sit alongside this one — same palette, same occasions."
           />
+          <ProductListAnalytics list="related_products" products={related} />
           <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
-            {related.map((p) => (
-              <ProductCard key={p.id} product={p} />
+            {related.map((relatedProduct, index) => (
+              <ProductCard
+                key={relatedProduct.id}
+                product={relatedProduct}
+                listContext="related_products"
+                position={index}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {/* recently viewed — client island, renders its own section */}
       <RecentlyViewed slug={product.slug} />
     </section>
   );

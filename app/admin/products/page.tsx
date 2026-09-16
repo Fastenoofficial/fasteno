@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Download, Package, Plus } from "lucide-react";
 import { isDemoMode } from "@/lib/config";
 import { requireAdmin } from "@/lib/auth";
+import { LOW_STOCK_THRESHOLD } from "@/lib/admin-constants";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ProductsTable } from "@/components/admin/ProductsTable";
@@ -20,14 +22,22 @@ interface AdminProductRow {
   featured: boolean;
   active: boolean;
   images: string[] | null;
-  categories: { slug: string; name: string } | { slug: string; name: string }[] | null;
+  categories:
+    | { slug: string; name: string }
+    | { slug: string; name: string }[]
+    | null;
+}
+
+function safeActionCount(value: string | undefined): string | null {
+  return value && /^\d{1,4}$/.test(value) ? value : null;
 }
 
 export default async function AdminProductsPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    deleted?: string;
+    stock?: string;
+    archived?: string;
     activated?: string;
     deactivated?: string;
     featured?: string;
@@ -39,29 +49,49 @@ export default async function AdminProductsPage({
   if (isDemoMode) return null;
   await requireAdmin();
 
-  const { deleted, activated, deactivated, featured, unfeatured, categorized, error } =
-    await searchParams;
+  const params = await searchParams;
+  const lowStockOnly = params.stock === "low";
+  const archived = safeActionCount(params.archived);
+  const activated = safeActionCount(params.activated);
+  const deactivated = safeActionCount(params.deactivated);
+  const featured = safeActionCount(params.featured);
+  const unfeatured = safeActionCount(params.unfeatured);
+  const categorized = safeActionCount(params.categorized);
+  const actionError = (params.error ?? "").trim().slice(0, 240);
 
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
-  // Fetch products with category details
-  const { data } = await supabase
+  let productQuery = supabase
     .from("products")
     .select(
       "id, slug, name, price, compare_at_price, stock, featured, active, images, categories(slug, name)",
+      { count: "exact" },
     )
     .order("created_at", { ascending: false });
+  if (lowStockOnly) {
+    productQuery = productQuery
+      .eq("active", true)
+      .lte("stock", LOW_STOCK_THRESHOLD);
+  }
 
-  const products = (data ?? []) as AdminProductRow[];
+  const [productResult, categoryResult, lowStockResult] = await Promise.all([
+    productQuery,
+    supabase.from("categories").select("id, name").order("name"),
+    supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("active", true)
+      .lte("stock", LOW_STOCK_THRESHOLD),
+  ]);
 
-  // Fetch all categories for bulk actions dropdown
-  const { data: categoriesData } = await supabase
-    .from("categories")
-    .select("id, name")
-    .order("name");
-
-  const categories = categoriesData ?? [];
+  const products = (productResult.data ?? []) as AdminProductRow[];
+  const resultCount = productResult.count ?? products.length;
+  const lowStockCount = lowStockResult.count ?? 0;
+  const categories = categoryResult.data ?? [];
+  const loadError = productResult.error
+    ? "Products are temporarily unavailable. Please refresh and try again."
+    : "";
 
   return (
     <div className="space-y-6">
@@ -69,7 +99,9 @@ export default async function AdminProductsPage({
         <div>
           <h2 className="font-display text-2xl text-ivory">Products</h2>
           <p className="mt-1 text-sm text-muted">
-            {products.length} in the catalog
+            {lowStockOnly
+              ? `${resultCount} active product${resultCount === 1 ? "" : "s"} at ${LOW_STOCK_THRESHOLD} units or fewer`
+              : `${resultCount} in the catalog`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -87,9 +119,34 @@ export default async function AdminProductsPage({
         </div>
       </div>
 
-      {deleted && (
+      <nav aria-label="Product stock filters" className="flex flex-wrap gap-2">
+        <Link
+          href="/admin/products"
+          aria-current={!lowStockOnly ? "page" : undefined}
+          className={`border px-3 py-1.5 text-xs uppercase tracking-[0.05em] transition-colors ${
+            !lowStockOnly
+              ? "border-gold bg-surface text-gold"
+              : "border-line text-muted hover:border-gold-light hover:text-ivory"
+          }`}
+        >
+          All products
+        </Link>
+        <Link
+          href="/admin/products?stock=low"
+          aria-current={lowStockOnly ? "page" : undefined}
+          className={`border px-3 py-1.5 text-xs uppercase tracking-[0.05em] transition-colors ${
+            lowStockOnly
+              ? "border-gold bg-surface text-gold"
+              : "border-line text-muted hover:border-gold-light hover:text-ivory"
+          }`}
+        >
+          Low stock ({lowStockResult.error ? "—" : lowStockCount})
+        </Link>
+      </nav>
+
+      {archived && (
         <p className="border border-success/50 bg-card px-4 py-3 text-sm text-success">
-          {deleted} product(s) deleted successfully.
+          {archived} product(s) archived. They can be activated again later.
         </p>
       )}
       {activated && (
@@ -117,19 +174,26 @@ export default async function AdminProductsPage({
           {categorized} product(s) category changed.
         </p>
       )}
-      {error && (
-        <p role="alert" className="border border-danger/50 bg-card px-4 py-3 text-sm text-danger">
-          {error}
+      {(actionError || loadError) && (
+        <p
+          role="alert"
+          className="border border-danger/50 bg-card px-4 py-3 text-sm text-danger"
+        >
+          {actionError || loadError}
         </p>
       )}
 
       {products.length === 0 ? (
         <EmptyState
           icon={<Package size={32} strokeWidth={1.5} />}
-          title="No products yet"
-          description="Add your first product to start selling."
-          actionLabel="New Product"
-          actionHref="/admin/products/new"
+          title={lowStockOnly ? "No low-stock products" : "No products yet"}
+          description={
+            lowStockOnly
+              ? `No active products currently have ${LOW_STOCK_THRESHOLD} units or fewer.`
+              : "Add your first product to start selling."
+          }
+          actionLabel={lowStockOnly ? "View all products" : "New Product"}
+          actionHref={lowStockOnly ? "/admin/products" : "/admin/products/new"}
         />
       ) : (
         <ProductsTable products={products} categories={categories} />

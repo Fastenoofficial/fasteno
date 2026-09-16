@@ -1,27 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { CheckoutSkeleton } from "@/components/ui/StorefrontSkeleton";
 import {
   CheckoutForm,
   CheckoutSummary,
   type AppliedCoupon,
 } from "@/components/checkout/CheckoutForm";
+import { trackStorefrontEvent } from "@/lib/analytics-client";
 import { useCart } from "@/lib/cart-context";
 
-/** Client island for /checkout — swaps in an empty state when there is
- *  nothing to buy, otherwise renders form + summary side by side.
- *  Owns the applied-coupon state so the summary (input + discount line)
- *  and the form (code submitted with the order) stay in sync. */
+/** Client island for /checkout. The form stays inert until persisted cart
+ * state is hydrated, preventing an empty pre-hydration checkout submission. */
 export function CheckoutClient() {
-  const { hydrated, items } = useCart();
+  const { hydrated, items, subtotal } = useCart();
   const [coupon, setCoupon] = useState<AppliedCoupon | null>(null);
+  const trackedCheckout = useRef(false);
 
-  if (hydrated && items.length === 0) {
+  useEffect(() => {
+    if (!hydrated || items.length === 0 || trackedCheckout.current) return;
+    trackedCheckout.current = true;
+    trackStorefrontEvent({
+      type: "begin_checkout",
+      items,
+      value: subtotal,
+    });
+  }, [hydrated, items, subtotal]);
+
+  if (!hydrated) return <CheckoutSkeleton />;
+
+  if (items.length === 0) {
     return (
       <div className="mt-10">
         <EmptyState
+          headingLevel={2}
           icon={<ShoppingBag size={36} strokeWidth={1.25} />}
           title="Nothing to check out"
           description="Your cart is empty. Add something worth wearing first."

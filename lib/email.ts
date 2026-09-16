@@ -7,6 +7,10 @@ import {
   SUPPORT_PHONE,
 } from "@/lib/config";
 import { formatDate, formatINR } from "@/lib/format";
+import {
+  guestOrderAccessUrl,
+  issueGuestOrderCredential,
+} from "@/lib/guest-order-access";
 
 /** Transactional email via Resend.
  *
@@ -36,6 +40,7 @@ export interface EmailOrderAddress {
 
 export interface EmailOrder {
   id: string;
+  userId?: string | null;
   orderNumber: string;
   email: string;
   items: EmailOrderItem[];
@@ -211,12 +216,11 @@ function shell(preheader: string, body: string): string {
 
 // ── Confirmation email ─────────────────────────────────────────────────
 
-function confirmationEmail(order: EmailOrder): {
+function confirmationEmail(order: EmailOrder, orderUrl: string): {
   subject: string;
   html: string;
   text: string;
 } {
-  const orderUrl = `${SITE_URL}/order/${order.id}`;
   const subject = `Order ${order.orderNumber} confirmed — ${SITE_NAME}`;
 
   const body = `
@@ -277,12 +281,11 @@ function confirmationEmail(order: EmailOrder): {
 
 // ── Shipped email ──────────────────────────────────────────────────────
 
-function shippedEmail(order: EmailOrder): {
+function shippedEmail(order: EmailOrder, orderUrl: string): {
   subject: string;
   html: string;
   text: string;
 } {
-  const orderUrl = `${SITE_URL}/order/${order.id}`;
   const subject = `Order ${order.orderNumber} is on its way — ${SITE_NAME}`;
   const courier = order.courier?.trim() || "our courier partner";
   const awb = order.awbNumber?.trim() || "";
@@ -349,12 +352,11 @@ function shippedEmail(order: EmailOrder): {
 
 /** Sent once, when the courier reports delivery. Doubles as the notice that
  *  starts the 7-day return window promised on /shipping-returns. */
-function deliveredEmail(order: EmailOrder): {
+function deliveredEmail(order: EmailOrder, orderUrl: string): {
   subject: string;
   html: string;
   text: string;
 } {
-  const orderUrl = `${SITE_URL}/order/${order.id}`;
   const subject = `Order ${order.orderNumber} delivered — ${SITE_NAME}`;
 
   const itemsSummary = order.items
@@ -484,6 +486,21 @@ export async function sendOrderEmail(
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) return; // demo mode / email not configured — no-op
 
+    let orderUrl = new URL(
+      `/order/${encodeURIComponent(order.id)}`,
+      SITE_URL,
+    ).toString();
+    if (order.userId === null) {
+      const credential = await issueGuestOrderCredential(order.id);
+      if (!credential) {
+        console.error(
+          `email: ${kind} not sent because secure guest access could not be issued.`,
+        );
+        return;
+      }
+      orderUrl = guestOrderAccessUrl(order.id, credential.token);
+    }
+
     const { Resend } = await import("resend");
     const resend = new Resend(apiKey);
     const from =
@@ -491,10 +508,10 @@ export async function sendOrderEmail(
 
     const { subject, html, text } =
       kind === "confirmation"
-        ? confirmationEmail(order)
+        ? confirmationEmail(order, orderUrl)
         : kind === "delivered"
-          ? deliveredEmail(order)
-          : shippedEmail(order);
+          ? deliveredEmail(order, orderUrl)
+          : shippedEmail(order, orderUrl);
 
     const { error } = await resend.emails.send({
       from,

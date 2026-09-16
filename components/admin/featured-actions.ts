@@ -5,84 +5,83 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function revalidateFeaturedProducts() {
+  revalidatePath("/admin/featured");
+  revalidatePath("/admin/products");
+  revalidatePath("/shop");
+  revalidatePath("/");
+}
+
+function redirectFeaturedError(message: string): never {
+  redirect(`/admin/featured?error=${encodeURIComponent(message)}`);
+}
+
+export async function setProductsFeatured(
+  productIds: string[],
+  featured: boolean,
+) {
+  await requireAdmin();
+  if (
+    !Array.isArray(productIds) ||
+    productIds.length === 0 ||
+    productIds.some((id) => !UUID.test(id)) ||
+    new Set(productIds).size !== productIds.length ||
+    typeof featured !== "boolean"
+  ) {
+    throw new Error("Featured product update is invalid.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_products_featured", {
+    p_product_ids: productIds,
+    p_featured: featured,
+  });
+  if (error) {
+    console.error("featured action: membership update failed —", error.message);
+    throw new Error("Featured products could not be updated. Please try again.");
+  }
+
+  revalidateFeaturedProducts();
+}
+
 export async function toggleFeatured(productId: string, featured: boolean) {
+  await setProductsFeatured([productId], featured);
+}
+
+export async function moveFeaturedProduct(id: string, direction: -1 | 1) {
   await requireAdmin();
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ featured })
-    .eq("id", productId);
-
-  if (error) {
-    throw new Error(error.message);
+  if (!UUID.test(id) || (direction !== -1 && direction !== 1)) {
+    redirectFeaturedError("Featured product move is invalid.");
   }
 
-  revalidatePath("/admin/featured");
-  revalidatePath("/admin/products");
-  revalidatePath("/");
-}
-
-export async function updateFeaturedOrder(productId: string, order: number) {
-  await requireAdmin();
   const supabase = await createClient();
-
-  const { error } = await supabase
-    .from("products")
-    .update({ featured_order: order })
-    .eq("id", productId);
-
+  const { error } = await supabase.rpc("move_featured_product", {
+    p_product_id: id,
+    p_direction: direction,
+  });
   if (error) {
-    throw new Error(error.message);
+    console.error("featured action: reorder failed —", error.message);
+    redirectFeaturedError(
+      "Featured ordering could not be saved. Refresh and try again.",
+    );
   }
 
-  revalidatePath("/admin/featured");
-  revalidatePath("/");
+  revalidateFeaturedProducts();
+  redirect("/admin/featured?moved=true");
 }
 
-export async function bulkFeature(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  // Get current max featured_order
-  const { data: maxData } = await supabase
-    .from("products")
-    .select("featured_order")
-    .eq("featured", true)
-    .order("featured_order", { ascending: false })
-    .limit(1);
-
-  const startOrder = maxData && maxData[0] ? maxData[0].featured_order + 1 : 0;
-
-  // Update products to be featured with sequential order
-  const updates = productIds.map((id, index) =>
-    supabase
-      .from("products")
-      .update({ featured: true, featured_order: startOrder + index })
-      .eq("id", id)
-  );
-
-  await Promise.all(updates);
-
-  revalidatePath("/admin/featured");
-  revalidatePath("/admin/products");
-  revalidatePath("/");
-}
-
-export async function bulkUnfeature(productIds: string[]) {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const updates = productIds.map((id) =>
-    supabase
-      .from("products")
-      .update({ featured: false, featured_order: 0 })
-      .eq("id", id)
-  );
-
-  await Promise.all(updates);
-
-  revalidatePath("/admin/featured");
-  revalidatePath("/admin/products");
-  revalidatePath("/");
+export async function unfeatureFeaturedProduct(id: string) {
+  try {
+    await setProductsFeatured([id], false);
+  } catch (error) {
+    console.error(
+      "featured action: unfeature failed —",
+      error instanceof Error ? error.message : error,
+    );
+    redirectFeaturedError("Unable to unfeature that product. Please try again.");
+  }
+  redirect("/admin/featured?updated=true");
 }

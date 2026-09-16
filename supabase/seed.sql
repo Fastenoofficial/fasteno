@@ -1,17 +1,53 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Fasteno Shyama — seed data (run AFTER 001_schema.sql)
--- Mirrors lib/seed-data.ts. Idempotent: safe to re-run.
+-- Fasteno Shyama — optional sample catalog data
+-- Run only AFTER the complete canonical migration chain (currently 001–010).
+-- Mirrors lib/seed-data.ts. Idempotent and ordering-safe when re-run.
 -- ═══════════════════════════════════════════════════════════════════
 
-insert into public.categories (slug, name, description, sort_order) values
-  ('ties', 'Ties', 'Handsome silk and woven neckties — formal solids, regimental stripes and textured weaves.', 1),
-  ('cufflinks', 'Cufflinks', 'Precision-cast cufflinks in gold, silver and gunmetal finishes, set with stone and enamel.', 2),
-  ('brooches', 'Brooches', 'Statement sherwani brooches and minimal lapel pins for weddings and festive occasions.', 3),
-  ('pocket-squares', 'Pocket Squares', 'Hand-rolled silk squares in solids, prints and contrast borders — the quiet flourish.', 4),
-  ('buttons', 'Buttons', 'Premium blazer, suit and kurta button sets in brass, horn and mother-of-pearl.', 5),
-  ('gift-sets', 'Gift Sets', 'Coordinated tie, square and cufflink sets in signature gift boxes — ready to give.', 6)
-on conflict (slug) do update
-  set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order;
+-- Preserve an administrator's current category order. Existing seed rows only
+-- receive copy updates; any missing seed category appends under a table lock.
+DO $seed_categories$
+DECLARE
+  item record;
+  next_order integer;
+BEGIN
+  LOCK TABLE public.categories IN SHARE ROW EXCLUSIVE MODE;
+
+  FOR item IN
+    SELECT *
+    FROM (VALUES
+      (0, 'ties', 'Ties', 'Handsome silk and woven neckties — formal solids, regimental stripes and textured weaves.'),
+      (1, 'cufflinks', 'Cufflinks', 'Precision-cast cufflinks in gold, silver and gunmetal finishes, set with stone and enamel.'),
+      (2, 'brooches', 'Brooches', 'Statement sherwani brooches and minimal lapel pins for weddings and festive occasions.'),
+      (3, 'pocket-squares', 'Pocket Squares', 'Hand-rolled silk squares in solids, prints and contrast borders — the quiet flourish.'),
+      (4, 'buttons', 'Buttons', 'Premium blazer, suit and kurta button sets in brass, horn and mother-of-pearl.'),
+      (5, 'gift-sets', 'Gift Sets', 'Coordinated tie, square and cufflink sets in signature gift boxes — ready to give.')
+    ) AS seed(seed_order, slug, name, description)
+    ORDER BY seed.seed_order
+  LOOP
+    UPDATE public.categories
+    SET name = item.name,
+        description = item.description
+    WHERE slug = item.slug;
+
+    IF NOT FOUND THEN
+      SELECT COALESCE(max(category.sort_order), -1) + 1
+      INTO next_order
+      FROM public.categories AS category;
+
+      INSERT INTO public.categories (slug, name, description, sort_order)
+      VALUES (item.slug, item.name, item.description, next_order);
+    END IF;
+  END LOOP;
+END
+$seed_categories$;
+
+CREATE TEMP TABLE IF NOT EXISTS seed_product_featured_state (
+  slug text PRIMARY KEY,
+  desired_featured boolean NOT NULL,
+  seed_order bigint GENERATED ALWAYS AS IDENTITY
+);
+TRUNCATE pg_temp.seed_product_featured_state RESTART IDENTITY;
 
 -- helper to keep product inserts readable
 create or replace function pg_temp.seed_product(
@@ -20,15 +56,20 @@ create or replace function pg_temp.seed_product(
   p_pattern text, p_tags text[], p_stock int, p_featured boolean
 ) returns void language plpgsql as $fn$
 begin
+  insert into pg_temp.seed_product_featured_state (slug, desired_featured)
+  values (p_slug, p_featured)
+  on conflict (slug) do update
+    set desired_featured = excluded.desired_featured;
+
   insert into public.products
     (slug, name, category_id, price, compare_at_price, description, details,
-     material, color, pattern, tags, images, stock, featured, active)
+     material, color, pattern, tags, images, stock, featured, featured_order, active)
   values
     (p_slug, p_name, (select id from public.categories where slug = p_cat),
      p_price, p_compare, p_desc, p_details, p_material, p_color, p_pattern,
      p_tags,
      array['/products/' || p_slug || '.svg', '/products/' || p_slug || '-detail.svg'],
-     p_stock, p_featured, true)
+     p_stock, false, 0, true)
   on conflict (slug) do update set
     name = excluded.name, category_id = excluded.category_id,
     price = excluded.price, compare_at_price = excluded.compare_at_price,
@@ -36,7 +77,7 @@ begin
     material = excluded.material, color = excluded.color,
     pattern = excluded.pattern, tags = excluded.tags,
     images = excluded.images, stock = excluded.stock,
-    featured = excluded.featured, active = true;
+    active = true;
 end;
 $fn$;
 
@@ -200,3 +241,75 @@ select pg_temp.seed_product('the-boardroom-set', 'The Boardroom Set', 'gift-sets
   'Promotion-day armour: the Charcoal Herringbone Tie and Gunmetal Hexagon Cufflinks, matched and boxed for the corner-office trajectory.',
   '["Charcoal Herringbone Tie (silk-wool)","Gunmetal Hexagon Cufflinks (steel)","Signature rigid gift box with sleeve","Complimentary gift note at checkout"]',
   'silk-wool', 'charcoal', 'textured', array['gift','office'], 22, false);
+-- Apply the authored featured membership without disturbing the relative order
+-- of already-featured products. Newly featured seed rows append in seed order;
+-- removed rows are compacted safely around the partial unique index from 008.
+DO $seed_featured$
+DECLARE
+  next_order integer;
+  featured_count integer;
+  stage_offset integer;
+BEGIN
+  LOCK TABLE public.products IN SHARE ROW EXCLUSIVE MODE;
+
+  UPDATE public.products AS product
+  SET featured = FALSE,
+      featured_order = 0
+  FROM pg_temp.seed_product_featured_state AS desired
+  WHERE product.slug = desired.slug
+    AND desired.desired_featured IS FALSE
+    AND product.featured IS TRUE;
+
+  SELECT COALESCE(max(product.featured_order), -1) + 1
+  INTO next_order
+  FROM public.products AS product
+  WHERE product.featured IS TRUE;
+
+  WITH additions AS (
+    SELECT product.id,
+           (row_number() OVER (ORDER BY desired.seed_order) - 1)::integer
+             AS append_offset
+    FROM pg_temp.seed_product_featured_state AS desired
+    JOIN public.products AS product ON product.slug = desired.slug
+    WHERE desired.desired_featured IS TRUE
+      AND product.featured IS NOT TRUE
+  )
+  UPDATE public.products AS product
+  SET featured_order = next_order + additions.append_offset,
+      featured = TRUE
+  FROM additions
+  WHERE product.id = additions.id;
+
+  SELECT count(*)::integer,
+         COALESCE(max(product.featured_order), -1) + count(*)::integer + 1
+  INTO featured_count, stage_offset
+  FROM public.products AS product
+  WHERE product.featured IS TRUE;
+
+  IF featured_count > 0 THEN
+    UPDATE public.products
+    SET featured_order = featured_order + stage_offset
+    WHERE featured IS TRUE;
+
+    WITH ranked AS (
+      SELECT product.id,
+             (row_number() OVER (
+               ORDER BY product.featured_order ASC,
+                        product.created_at ASC,
+                        product.id ASC
+             ) - 1)::integer AS final_order
+      FROM public.products AS product
+      WHERE product.featured IS TRUE
+    )
+    UPDATE public.products AS product
+    SET featured_order = ranked.final_order
+    FROM ranked
+    WHERE product.id = ranked.id;
+  END IF;
+
+  UPDATE public.products
+  SET featured_order = 0
+  WHERE featured IS NOT TRUE
+    AND featured_order <> 0;
+END
+$seed_featured$;

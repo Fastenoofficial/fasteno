@@ -7,6 +7,7 @@ interface EmptyStateProps {
   description?: string;
   actionLabel?: string;
   actionHref?: string;
+  headingLevel?: 2 | 3 | 4;
 }
 
 export function EmptyState({
@@ -15,13 +16,24 @@ export function EmptyState({
   description,
   actionLabel,
   actionHref,
+  headingLevel = 3,
 }: EmptyStateProps) {
+  const Heading = `h${headingLevel}` as "h2" | "h3" | "h4";
+
   return (
-    <div className="flex flex-col items-center border border-dashed border-line px-6 py-20 text-center">
-      {icon && <div className="mb-4 text-gold/70">{icon}</div>}
-      <h3 className="font-display text-2xl text-ivory">{title}</h3>
+    <div className="flex flex-col items-center rounded-3xl border border-dashed border-line bg-card px-6 py-20 text-center shadow-[var(--shadow-card)]">
+      {icon && (
+        <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gold-light/12 text-gold">
+          {icon}
+        </div>
+      )}
+      <Heading className="font-display text-2xl font-semibold tracking-[-0.025em] text-ivory">
+        {title}
+      </Heading>
       {description && (
-        <p className="mt-2 max-w-sm text-sm text-muted">{description}</p>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
+          {description}
+        </p>
       )}
       {actionLabel && actionHref && (
         <div className="mt-6">

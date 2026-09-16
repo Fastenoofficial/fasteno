@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { validateCoupon } from "@/lib/orders";
-import { clientIp, rateLimit, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
+import { readBoundedJson } from "@/lib/request-body";
+import {
+  clientIp,
+  rateLimit,
+  rateLimitKey,
+  RATE_LIMIT_MESSAGE,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -15,10 +21,10 @@ export const runtime = "nodejs";
  *  Rate limited: 20 req/min/IP.
  */
 export async function POST(request: Request) {
-  const limited = await rateLimit(`coupon:${clientIp(request)}`, {
-    limit: 20,
-    windowMs: 60_000,
-  });
+  const limited = await rateLimit(
+    rateLimitKey("coupon", clientIp(request)),
+    { limit: 20, windowMs: 60_000 },
+  );
   if (!limited.ok) {
     return NextResponse.json(
       { valid: false, reason: RATE_LIMIT_MESSAGE },
@@ -29,17 +35,18 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
+  const parsed = await readBoundedJson(request, { maxBytes: 2_048 });
+  if (!parsed.ok) {
     return NextResponse.json(
-      { valid: false, reason: "Invalid request." },
-      { status: 400 },
+      {
+        valid: false,
+        reason: parsed.status === 400 ? "Invalid request." : parsed.error,
+      },
+      { status: parsed.status },
     );
   }
 
-  const b = (body ?? {}) as Record<string, unknown>;
+  const b = (parsed.value ?? {}) as Record<string, unknown>;
   const code = typeof b.code === "string" ? b.code.trim() : "";
   const subtotal = Number(b.subtotal);
 

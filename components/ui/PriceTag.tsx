@@ -21,8 +21,8 @@ export function PriceTag({
 }: PriceTagProps) {
   const onSale = compareAtPrice != null && compareAtPrice > price;
   return (
-    <span className="inline-flex items-baseline gap-2">
-      <span className={`font-display text-ivory ${sizes[size]}`}>
+    <span className="inline-flex flex-wrap items-baseline gap-2">
+      <span className={`font-display font-semibold tracking-[-0.02em] text-ivory ${sizes[size]}`}>
         {formatINR(price)}
       </span>
       {onSale && (

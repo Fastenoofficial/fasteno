@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ProductListAnalytics } from "@/lib/analytics-client";
 import { ProductCard } from "@/components/ui/ProductCard";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import type { Product } from "@/lib/types";
 
 /** Client island for the PDP: records the current product in the
- *  localStorage browsing trail (`fs-recently-viewed`, max 8 slugs,
- *  most-recent first) and renders a "Recently viewed" rail of the OTHER
- *  products in the trail. Renders nothing until mounted, and nothing at
- *  all when the visitor has no earlier history. */
+ * localStorage browsing trail (`fs-recently-viewed`, max 8 slugs,
+ * most-recent first) and renders the other products in the trail. */
 
 const STORAGE_KEY = "fs-recently-viewed";
 const MAX_SLUGS = 8;
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function readTrail(): string[] {
   try {
@@ -20,52 +20,55 @@ function readTrail(): string[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((s): s is string => typeof s === "string");
+    return parsed
+      .filter(
+        (value): value is string =>
+          typeof value === "string" &&
+          value.length <= 80 &&
+          SLUG_RE.test(value),
+      )
+      .slice(0, MAX_SLUGS);
   } catch {
     return [];
   }
 }
 
 export function RecentlyViewed({ slug }: { slug: string }) {
-  // null = not mounted / still loading → render nothing (no layout shift
-  // vs. server HTML, which never contains this section).
   const [products, setProducts] = useState<Product[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    // Record the current product at the front of the trail.
-    const trail = [slug, ...readTrail().filter((s) => s !== slug)].slice(
+    const trail = [slug, ...readTrail().filter((value) => value !== slug)].slice(
       0,
       MAX_SLUGS,
     );
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trail));
     } catch {
-      // storage full/blocked — the rail still works for this visit
+      // Storage full/blocked — the rail still works for this visit.
     }
 
-    const others = trail.filter((s) => s !== slug);
+    const others = trail.filter((value) => value !== slug);
     if (others.length === 0) {
       setProducts([]);
       return;
     }
 
-    (async () => {
+    void (async () => {
       try {
-        const res = await fetch(
+        const response = await fetch(
           `/api/products/by-slugs?slugs=${encodeURIComponent(others.join(","))}`,
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: unknown = await res.json();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data: unknown = await response.json();
         const list = Array.isArray((data as { products?: unknown })?.products)
           ? ((data as { products: Product[] }).products)
           : [];
-        // Keep most-recent-first order regardless of API ordering.
-        const rank = new Map(others.map((s, i) => [s, i]));
+        const rank = new Map(others.map((value, index) => [value, index]));
         list.sort(
           (a, b) =>
-            (rank.get(a.slug) ?? MAX_SLUGS) - (rank.get(b.slug) ?? MAX_SLUGS),
+            (rank.get(a.slug) ?? MAX_SLUGS) -
+            (rank.get(b.slug) ?? MAX_SLUGS),
         );
         if (!cancelled) setProducts(list.slice(0, MAX_SLUGS));
       } catch {
@@ -87,9 +90,15 @@ export function RecentlyViewed({ slug }: { slug: string }) {
         title="Recently Viewed"
         description="Pieces you looked at earlier — still where you left them."
       />
+      <ProductListAnalytics list="recently_viewed" products={products} />
       <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
-        {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
+        {products.map((product, index) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            listContext="recently_viewed"
+            position={index}
+          />
         ))}
       </div>
     </div>

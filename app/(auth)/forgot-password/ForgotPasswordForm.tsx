@@ -3,6 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SITE_URL } from "@/lib/config";
+import {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_EMAIL_PATTERN,
+  normalizeAuthEmail,
+} from "@/lib/auth-input";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
@@ -18,16 +23,26 @@ export function ForgotPasswordForm() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    const normalizedEmail = normalizeAuthEmail(email);
+    if (
+      normalizedEmail.length > AUTH_EMAIL_MAX_LENGTH ||
+      !AUTH_EMAIL_PATTERN.test(normalizedEmail)
+    ) {
+      setError("Please enter a valid email address.");
+      return;
+    }
     setSubmitting(true);
+    setEmail(normalizedEmail);
 
     const supabase = createClient();
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-      email.trim(),
+      normalizedEmail,
       { redirectTo: `${SITE_URL}/auth/callback?next=/reset-password` },
     );
 
     if (resetError) {
-      setError(resetError.message);
+      setError("Could not send a reset link right now. Please try again later.");
       setSubmitting(false);
       return;
     }
@@ -61,6 +76,7 @@ export function ForgotPasswordForm() {
         name="email"
         autoComplete="email"
         required
+        maxLength={AUTH_EMAIL_MAX_LENGTH}
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"

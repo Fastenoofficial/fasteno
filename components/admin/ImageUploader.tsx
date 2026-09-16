@@ -25,8 +25,8 @@ import { Button } from "@/components/ui/Button";
  *  Existing URL/path-based images (e.g. seed /products/*.svg) render in the
  *  same grid, so nothing downstream changes. */
 
-const ACCEPT = "image/jpeg,image/png,image/webp,image/avif";
-const MAX_BYTES = 5 * 1024 * 1024;
+export const ADMIN_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/avif";
+export const ADMIN_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 interface UploadingFile {
   id: string;
@@ -45,7 +45,7 @@ interface ImageUploaderProps {
 
 let uid = 0;
 
-function uploadWithProgress(
+export function uploadAdminImageWithProgress(
   file: File,
   slug: string | undefined,
   onProgress: (percent: number) => void,
@@ -108,7 +108,7 @@ export function ImageUploader({ images, onChange, slug }: ImageUploaderProps) {
       const files = Array.from(fileList);
       for (const file of files) {
         const id = `up-${++uid}`;
-        if (!ACCEPT.split(",").includes(file.type)) {
+        if (!ADMIN_IMAGE_ACCEPT.split(",").includes(file.type)) {
           setUploading((u) => [
             ...u,
             {
@@ -120,7 +120,7 @@ export function ImageUploader({ images, onChange, slug }: ImageUploaderProps) {
           ]);
           continue;
         }
-        if (file.size > MAX_BYTES) {
+        if (file.size > ADMIN_IMAGE_MAX_BYTES) {
           setUploading((u) => [
             ...u,
             { id, name: file.name, progress: null, error: "Over 5 MB." },
@@ -128,7 +128,7 @@ export function ImageUploader({ images, onChange, slug }: ImageUploaderProps) {
           continue;
         }
         setUploading((u) => [...u, { id, name: file.name, progress: 0 }]);
-        void uploadWithProgress(file, slug, (percent) => {
+        void uploadAdminImageWithProgress(file, slug, (percent) => {
           setUploading((u) =>
             u.map((f) => (f.id === id ? { ...f, progress: percent } : f)),
           );
@@ -288,7 +288,7 @@ export function ImageUploader({ images, onChange, slug }: ImageUploaderProps) {
           <input
             ref={inputRef}
             type="file"
-            accept={ACCEPT}
+            accept={ADMIN_IMAGE_ACCEPT}
             multiple
             onChange={handleInputChange}
             className="hidden"
