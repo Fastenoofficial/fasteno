@@ -80,7 +80,8 @@ export const COD_MAX_TOTAL = 500000; // ₹5,000
 /** True when a transactional-email provider is configured (Resend). */
 export const isEmailConfigured = Boolean(process.env.RESEND_API_KEY);
 
-/** True when the service-role key is available (webhooks, refunds, stock). */
+/** True when a server-only Supabase secret is available. */
 export const isServiceRoleConfigured = Boolean(
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  process.env.SUPABASE_SECRET_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
 );

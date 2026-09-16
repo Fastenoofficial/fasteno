@@ -222,6 +222,7 @@ export function clientIp(source: Request | Headers): string {
 function limiterHashSecret(): string {
   return (
     process.env.RATE_LIMIT_HASH_SECRET?.trim() ||
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
     process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
     process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
     "fasteno-local-rate-limit-key"
